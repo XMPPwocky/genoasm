@@ -42,12 +42,17 @@ impl Genoasm {
             areg_playheads: [0; NUM_REGISTERS as usize],
             stack: [0; STACK_SIZE],
             stack_pointer: 0,
-            gas: 10_000_000
+            gas: 300 * audio.len() as u64
         };
         
-        while vm.run_insn(&self.instructions[vm.pc as usize]) == VmRunResult::Continue {
+        let mut status = VmRunResult::Continue;
+        while status == VmRunResult::Continue {
+            status = vm.run_insn(&self.instructions[vm.pc as usize]);
         }
-
+        /*if status == VmRunResult::OutOfGas {
+            // penalize gas guzzlers - return 0... inefficient lol
+            return std::iter::repeat(0).take(audio.len()).collect();
+        }*/
         let f = vm.aregs[1].clone(); // useless clone lol
         let gain = i16::MAX as f32 / *f.iter().max().unwrap_or(&1) as f32;
         f.into_iter().map(|x| (x as f32 * gain) as i16).collect()
@@ -79,7 +84,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..8192+4096 {
+        for _ in 0..16384 {
             match rng.gen_range(0..=1) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
@@ -97,15 +102,15 @@ impl Animal for Genoasm {
         }
 
         // mutate instructions
-        for _ in 0..256 {
+        for _ in 0..512 {
             match rng.gen_range(0..=1) {
                 0 => {
-                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    let idx = rng.gen_range(0..LUT_SIZE);
                     let shift = rng.gen_range(0..8);
                     ant.lut[idx] ^= 1<<shift;
                 },
                 _  => {
-                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    let idx = rng.gen_range(0..LUT_SIZE);
                     let add = rng.gen_range(0..=16);
                     ant.lut[idx] = ant.lut[idx].wrapping_add(add);
                 }
@@ -180,7 +185,8 @@ impl Instruction {
 #[derive(Debug, PartialEq)]
 pub enum VmRunResult {
     Continue,
-    Stop
+    Stop,
+    OutOfGas
 }
 
 pub struct VmState {
@@ -198,6 +204,10 @@ pub struct VmState {
     gas: u64,
 }
 impl VmState {
+    fn burn_gas(&mut self, gas: u64) {
+        if self.gas > gas { self.gas -= gas; } 
+        else { self.gas = 0; }
+    }
     fn get_reg(&mut self, idx: u8) -> u16 {
         let idx = idx % NUM_REGISTERS;
         
@@ -227,7 +237,7 @@ impl VmState {
 
     pub fn run_insn(&mut self, insn: &Instruction) -> VmRunResult {
         if self.gas == 0 {
-            return VmRunResult::Stop;
+            return VmRunResult::OutOfGas;
         }
         self.gas -= 1;
 
@@ -387,12 +397,21 @@ impl VmState {
                 let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
 
                 let val = self.get_reg(insn.get_operand_imm8(1)) % (self.aregs[idx].len() as u16);
-                self.areg_playheads[idx] = val as usize;
+
+                let imm = insn.get_operand_imm8(2);
+
+                if imm & 0x1 == 0 {
+                    self.areg_playheads[idx] = val as usize;
+                } else {
+                    self.areg_playheads[idx] = (self.areg_playheads[idx] + val as usize) % self.aregs[idx].len();
+                }
             },
             Filter => {
                 let imm = insn.get_operand_imm8(0);
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
+
+                self.burn_gas(kernel_size as u64);
 
                 let kernel_idx = (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
                 let kernel = &self.aregs[kernel_idx];
@@ -407,15 +426,15 @@ impl VmState {
                 for _ in 0..kernel_size {
                     kernel_playhead = (kernel_playhead + 1) % kernel.len();
                     audio_playhead = (audio_playhead + 1) % audio.len();
-                    out_ful += kernel[kernel_playhead] * audio[audio_playhead];
+                    out_full += kernel[kernel_playhead] as i32 * audio[audio_playhead] as i32;
                 }
 
                 if incr_playhead {
-                    audio_playhead += 1;
+                    self.advance_playhead(audio_idx);
                 }
 
                 let out = (out_full >> 16) as i16;
-                self.set_reg(REG_ACCUMULATOR, out);
+                self.set_reg(REG_ACCUMULATOR, out as u16);
             }
             
             unimpl => todo!("{unimpl:?}")
