@@ -1,22 +1,40 @@
 use animal::{genoasm, Animal};
 use rand::Rng;
 use tracing::info;
+use core::cmp::Ordering;
 
 pub mod animal;
 pub mod similarity;
 pub mod ecosystem;
 pub mod corrupt;
 
+fn fitness(candidate: &[i16], seed: &[i16]) -> f32 {
+    let mut out = 0.0;
+    // let's just a least-squares yeah?
+
+    for (&c, &s) in candidate.iter().zip(seed.iter()) {
+        let difference = ((c as f32) - (s as f32)) / i16::MAX as f32;
+        let sqr = difference*difference;
+        out -= sqr; // minus because bigger error = worse
+    }
+    -out // HACK for me screwing up the sort order later lmao 
+}
+
 fn screen(gen: &genoasm::Genoasm) -> bool {
-    let v = gen.feed(&[0x0; 4096]);
-    if v.iter().filter(|x| **x != 0).count() < 16 { 
+    let v = gen.feed(&[0x1; 2048]);
+    if v.iter().filter(|x| **x != 0).count() < 512 { 
         return false;
     }
-    if (v[v.len() / 2..]).iter().filter(|x| **x != 0).count() < 8 { 
+    if (v[v.len() / 2..]).iter().filter(|x| **x != 0).count() < 64 { 
         return false;
     }
-    let v2 = gen.feed(&[0xAD; 4096]);
+    let v2 = gen.feed(&[0xAD; 2048]);
     if v == v2 { return false; }
+    if v2.iter().filter(|x| **x != 0).count() < 256 { 
+        return false;
+    }
+    let v3 = gen.feed(&[0x13; 2048]);
+    if v3 == v2 { return false; }
     true
 }
 fn main() -> color_eyre::Result<()> {
@@ -35,64 +53,107 @@ fn main() -> color_eyre::Result<()> {
     let mut rng = rand::thread_rng();
 
     let seed: Result<Vec<i16>, _> = {
-        let mut reader = hound::WavReader::open("../../Downloads/rainyUI/rainyUI_13.wav")?;
-        reader.samples::<i16>().collect()
+        let mut reader = hound::WavReader::open("../../Downloads/amen_1bar.wav")?;
+        if reader.spec().channels == 2 {
+            reader.samples::<i16>().step_by(2).collect() // just take one channel ig
+        } else {
+            reader.samples::<i16>().collect()
+        }
     };
 
     let seed = seed?;
+    // normalize 4 later
+    let gain = i16::MAX as f32 / *seed.iter().max().unwrap_or(&1) as f32;
+    let seed: Vec<_> = seed.into_iter().map(|x| (x as f32 * gain) as i16).collect();
 
     let mut eve;
     info!("Generating Eve(s)");
-    for i in 0..4 {
+    for i in 0..9 {
         loop {
             eve = genoasm::Genoasm::spontaneous_generation();
             if screen(&eve) { break }
         }
         
         let aud = eve.feed(&seed);
-        garbo.push((aud, eve.clone()));
-        garbo.push((seed.clone(), eve)); // HACK
+        let f = fitness(&aud, &seed);
+        garbo.push((f, aud, eve.clone()));
+        //garbo.push((f / 16.0, seed.clone(), eve)); // HACK
     }
 
-    while garbo.len() < 64 {
+    for i in 0..16384 {
+        while garbo.len() < 256 {
+            let (aud, gen) = {
+                let (_, aud1, eve) = &garbo[rng.gen_range(0..garbo.len())];
+                let (_, aud2, _) = &garbo[rng.gen_range(0..garbo.len())];
+
+                let aud: Vec<i16> = aud1.iter().zip(aud2.iter()).map(|(&a, &b)| a+b).collect();
+
+                let gen = eve.mutate();
+                (aud, gen)
+            };
+            if screen(&gen) {
+                let aud = gen.feed(&aud);
+                let f = fitness(&aud, &seed);
+                garbo.push((f, aud, gen));
+                info!("Population size: {:?}", garbo.len());
+            }
+        }
+        
+        println!("{:?}", i);
         let (aud, gen) = {
-            let (aud1, eve) = &garbo[rng.gen_range(0..garbo.len())];
-            let (aud2, _) = &garbo[rng.gen_range(0..garbo.len())];
+            let mut v;
+            loop {
+                let idx = rng.gen_range(0..garbo.len());
+                v = &garbo[idx];
+                if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.8)) {
+                    continue;
+                }
+                break;
+            };
+            let (_, aud1, eve) = v;
+            loop {
+                let idx = rng.gen_range(0..garbo.len());
+                v = &garbo[idx];
+                if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.8)) {
+                    continue;
+                }
+                break;
+            };
+            let (_, aud2, _) = v;
 
             let aud: Vec<i16> = aud1.iter().zip(aud2.iter()).map(|(&a, &b)| a+b).collect();
 
-            let aud = eve.feed(&aud);
             let gen = eve.mutate();
             (aud, gen)
         };
         if screen(&gen) {
             let aud = gen.feed(&aud);
 
-            garbo.push((aud, gen));
-            info!("Population size: {:?}", garbo.len());
+            let f = fitness(&aud, &seed);
+    
+            //let pos = garbo.partition_point(|&(f2, _, _)| f2 > f);
+            //if pos == garbo.len() { continue; }
+            //println!("{:?} {:?} {:?}", pos, garbo[pos].0, f);
+            garbo.push((f, aud, gen)); // think this copies the whole genome lmao
+
+            // and this is just silly - use partition_point you goober
+            garbo.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal)
+            });
+
+            let death = rng.gen_range(garbo.len() * 3 / 4 .. garbo.len());
+            garbo.remove(death);
+            // horrible wasteful augh
+            garbo.dedup_by(|a, b| a.1 == b.1); // remove anything with same audio
+
+            //println!();
+            //assert!(garbo.is_sorted_by(|a, b| a.0.partial_cmp(b.0)));
         }
     }
 
-    for i in 0..2048 {
-        let (aud, gen) = {
-            let (aud1, eve) = &garbo[rng.gen_range(0..garbo.len())];
-            let (aud2, _) = &garbo[rng.gen_range(0..garbo.len())];
-
-            let aud: Vec<i16> = aud1.iter().zip(aud2.iter()).map(|(&a, &b)| a+b).collect();
-
-            let aud = eve.feed(&aud);
-            let gen = eve.mutate();
-            (aud, gen)
-        };
-        if screen(&gen) {
-            let aud = gen.feed(&aud);
-
-            for &j in &aud {
-                writer.write_sample(j)?;
-            }
-
-            let x = garbo.len();
-            garbo[rng.gen_range(0..x)] = (aud, gen);
+    for (_, aud, _) in garbo {
+        for s in aud {
+            writer.write_sample(s)?;
         }
     }
 

@@ -6,7 +6,8 @@ use crate::animal::Animal;
 
 pub const NUM_REGISTERS: u8 = 16;
 
-pub const REG_ACCUMULATOR: u8 = 0;
+pub const REG_ZERO: u8 = 1;
+pub const REG_ACCUMULATOR: u8 = 1;
 pub const REG_BP: u8 = NUM_REGISTERS - 1;
 
 pub const AREG_REFERENCE: u8 = 0;
@@ -40,16 +41,16 @@ impl Genoasm {
             aregs,
             areg_playheads: [0; NUM_REGISTERS as usize],
             stack: [0; STACK_SIZE],
-            stack_pointer: 0
+            stack_pointer: 0,
+            gas: 10_000_000
         };
         
-        let mut gas = 500_000;
-
-        while gas > 0 && vm.run_insn(&self.instructions[vm.pc as usize]) == VmRunResult::Continue {
-            gas -= 1;
+        while vm.run_insn(&self.instructions[vm.pc as usize]) == VmRunResult::Continue {
         }
 
-        vm.aregs[1].clone() // useless clone lol
+        let f = vm.aregs[1].clone(); // useless clone lol
+        let gain = i16::MAX as f32 / *f.iter().max().unwrap_or(&1) as f32;
+        f.into_iter().map(|x| (x as f32 * gain) as i16).collect()
     }
 }
 
@@ -58,11 +59,11 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
         let mut instructions = [Instruction([0; 4]); NUM_INSTRUCTIONS];
         for insn in &mut instructions {
-            insn.0[0] = rng.gen_range(0..=Opcode::Seek as u8);
-            for q in &mut insn.0[1..] { if rng.gen_bool(0.8) {
+            insn.0[0] = rng.gen_range(0..=Opcode::Filter as u8);
+            for q in &mut insn.0[1..] { if rng.gen_bool(0.6) {
                 *q = rng.gen();
             } else {
-                let magics = [0u8, 1, 0xFF];
+                let magics = [0u8, 1, 0x7F, 0x80, 0xFF];
                 *q = magics[rng.gen_range(0..magics.len())];
             }}
         }
@@ -78,11 +79,37 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..16384 {
-            let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
-            let offset = rng.gen_range(0..4);
-            let shift = rng.gen_range(0..8);
-            ant.instructions[idx].0[offset] ^= 1<<shift;
+        for _ in 0..8192+4096 {
+            match rng.gen_range(0..=1) {
+                0 => {
+                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    let offset = rng.gen_range(0..4);
+                    let shift = rng.gen_range(0..8);
+                    ant.instructions[idx].0[offset] ^= 1<<shift;
+                },
+                _  => {
+                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    let offset = rng.gen_range(0..4);
+                    let add = rng.gen_range(0..=16);
+                    ant.instructions[idx].0[offset] = ant.instructions[idx].0[offset].wrapping_add(add);
+                }
+            }
+        }
+
+        // mutate instructions
+        for _ in 0..256 {
+            match rng.gen_range(0..=1) {
+                0 => {
+                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    let shift = rng.gen_range(0..8);
+                    ant.lut[idx] ^= 1<<shift;
+                },
+                _  => {
+                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    let add = rng.gen_range(0..=16);
+                    ant.lut[idx] = ant.lut[idx].wrapping_add(add);
+                }
+            }
         }
 
         ant
@@ -130,7 +157,7 @@ pub enum Opcode {
     Tell, // store AREG_A playhead to REG_B
     Seek, // Set AREG_A playhead to REG_B
 
-    //Filter, // set accumulator to the convolution of the next IMM8_A samples from AREG_B (at playhead) w/ next samples from AREG_C
+    Filter, // set accumulator to the convolution of the next IMM8_A samples from AREG_B (at playhead) w/ next samples from AREG_C
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -167,13 +194,18 @@ pub struct VmState {
 
     stack: [u16; STACK_SIZE],
     stack_pointer: u16,
+
+    gas: u64,
 }
 impl VmState {
     fn get_reg(&mut self, idx: u8) -> u16 {
-        if idx >= NUM_REGISTERS { 0 } else { self.regs[idx as usize] }
+        let idx = idx % NUM_REGISTERS;
+        
+        if idx == REG_ZERO { 0 } else { self.regs[idx as usize] }
     }
     fn set_reg(&mut self, idx: u8, val: u16) {
-        if idx < NUM_REGISTERS { self.regs[idx as usize] = val; }
+        let idx = idx % NUM_REGISTERS;
+        self.regs[idx as usize] = val;
     }
 
     fn advance_playhead(&mut self, idx: usize) {
@@ -194,6 +226,11 @@ impl VmState {
     }
 
     pub fn run_insn(&mut self, insn: &Instruction) -> VmRunResult {
+        if self.gas == 0 {
+            return VmRunResult::Stop;
+        }
+        self.gas -= 1;
+
         self.pc += 1;
 
         let Some(opcode) = insn.get_opcode() else {
@@ -288,7 +325,7 @@ impl VmState {
                 let lhs = self.get_reg(insn.get_operand_imm8(1)) as i16;
                 let rhs = self.get_reg(insn.get_operand_imm8(2)) as i16;
 
-                let product = if rhs == 0 { 0 } else { lhs / rhs };
+                let product = lhs.checked_div(rhs).unwrap_or(0);
 
                 self.set_reg(REG_ACCUMULATOR, product as u16);
             },
@@ -327,14 +364,15 @@ impl VmState {
             In => {
                 let sample = {
                     let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
+                    let idx = 0; // HACK for effiency lol
                     let sample = self.aregs[idx][self.areg_playheads[idx]];
                     self.advance_playhead(idx);
                     sample
                 };
-                self.set_reg(REG_ACCUMULATOR, sample as u16);
+                self.set_reg(insn.get_operand_imm8(1), sample as u16);
             },
             Out => {
-                let sample = self.get_reg(REG_ACCUMULATOR);
+                let sample = self.get_reg(insn.get_operand_imm8(1));
 
                 let idx = 1; // HACK, EFF //insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
                 self.aregs[idx][self.areg_playheads[idx]] = sample as i16;
@@ -350,6 +388,34 @@ impl VmState {
 
                 let val = self.get_reg(insn.get_operand_imm8(1)) % (self.aregs[idx].len() as u16);
                 self.areg_playheads[idx] = val as usize;
+            },
+            Filter => {
+                let imm = insn.get_operand_imm8(0);
+                let kernel_size = imm >> 1;
+                let incr_playhead = (imm & 1) == 1;
+
+                let kernel_idx = (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
+                let kernel = &self.aregs[kernel_idx];
+
+                let audio_idx = (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
+                let audio = &self.aregs[audio_idx];
+
+                let mut kernel_playhead = self.areg_playheads[kernel_idx];
+                let mut audio_playhead = self.areg_playheads[audio_idx];
+                
+                let mut out_full = 0i32;
+                for _ in 0..kernel_size {
+                    kernel_playhead = (kernel_playhead + 1) % kernel.len();
+                    audio_playhead = (audio_playhead + 1) % audio.len();
+                    out_ful += kernel[kernel_playhead] * audio[audio_playhead];
+                }
+
+                if incr_playhead {
+                    audio_playhead += 1;
+                }
+
+                let out = (out_full >> 16) as i16;
+                self.set_reg(REG_ACCUMULATOR, out);
             }
             
             unimpl => todo!("{unimpl:?}")
