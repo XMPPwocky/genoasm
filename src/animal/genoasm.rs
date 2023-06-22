@@ -78,7 +78,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..8192 {
+        for _ in 0..16384 {
             let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
             let offset = rng.gen_range(0..4);
             let shift = rng.gen_range(0..8);

@@ -32,19 +32,29 @@ fn main() -> color_eyre::Result<()> {
 
     let mut garbo = vec![];
 
-    let mut eve;
-    info!("Generating Eve");
-    loop {
-        eve = genoasm::Genoasm::spontaneous_generation();
-        if screen(&eve) { break }
-    }
-    
     let mut rng = rand::thread_rng();
 
-    let aud = eve.feed(&[0; 44100]);
-    garbo.push((aud, eve));
+    let seed: Result<Vec<i16>, _> = {
+        let mut reader = hound::WavReader::open("../../Downloads/rainyUI/rainyUI_13.wav")?;
+        reader.samples::<i16>().collect()
+    };
 
-    while garbo.len() < 256 {
+    let seed = seed?;
+
+    let mut eve;
+    info!("Generating Eve(s)");
+    for i in 0..4 {
+        loop {
+            eve = genoasm::Genoasm::spontaneous_generation();
+            if screen(&eve) { break }
+        }
+        
+        let aud = eve.feed(&seed);
+        garbo.push((aud, eve.clone()));
+        garbo.push((seed.clone(), eve)); // HACK
+    }
+
+    while garbo.len() < 64 {
         let (aud, gen) = {
             let (aud1, eve) = &garbo[rng.gen_range(0..garbo.len())];
             let (aud2, _) = &garbo[rng.gen_range(0..garbo.len())];
