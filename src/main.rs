@@ -61,7 +61,7 @@ struct Args {
 
 use util::normalize_audio;
 
-use crate::{similarity::spectral_fitness, util::mix_audio};
+use crate::{similarity::{spectral_fitness, compute_spectrogram, compare_spectrograms}, util::mix_audio, animal::{genoasm::Genoasm, AnimalInfo}};
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
     let (v, _) = gen.feed(&[0x1; 1024]);
@@ -102,7 +102,7 @@ fn main() -> color_eyre::Result<()> {
         sample_format: hound::SampleFormat::Int,
     };
 
-    let mut garbo = vec![];
+    let mut garbo: Vec<(Genoasm, AnimalInfo)> = vec![];
 
     let seed: Result<Vec<i16>, _> = {
         let mut reader = hound::WavReader::open(args.input)?;
@@ -113,14 +113,13 @@ fn main() -> color_eyre::Result<()> {
         }
     };
 
-    let seed = normalize_audio(&seed?);
-    /*while !seed.len().is_power_of_two() {
-        seed.push(0); // we want that fast FFT... sigh...
-    }*/
-
     // prep fft stuff for scoring similarity
     let mut real_planner = RealFftPlanner::<f32>::new();
     let r2c = real_planner.plan_fft_forward(args.fft_size);
+
+
+    let seed = normalize_audio(&seed?);
+    let seed_spec = compute_spectrogram(&seed, &*r2c);
 
     let mut rng = rand::thread_rng();
 
@@ -158,8 +157,14 @@ fn main() -> color_eyre::Result<()> {
         }
 
         let (aud, gas) = eve.feed(&noisy_seed);
+        let spec = compute_spectrogram(&aud, &*r2c);
         let f = spectral_fitness(&aud, &seed, &*r2c) * (gas as f64);
-        garbo.push((f, aud, eve.clone()));
+        let info = AnimalInfo {
+            fitness: f,
+            spectrogram: spec,
+            audio: aud
+        };
+        garbo.push((eve.clone(), info));
     }
 
     let mut f_history = vec![];
@@ -168,8 +173,8 @@ fn main() -> color_eyre::Result<()> {
         if i % 256 == 0 {
             let mut writer = hound::WavWriter::create(&args.output, spec).unwrap();
 
-            for (_, aud, _) in &garbo {
-                for s in aud {
+            for (_, info) in &garbo {
+                for s in &info.audio {
                     writer.write_sample(*s)?;
                 }
             }
@@ -185,32 +190,29 @@ fn main() -> color_eyre::Result<()> {
             garbo.remove(death);
         }
         while garbo.len() < args.population_size {
-            let (par_aud, gen) = {
-                let (aud, gen) = if rng.gen_bool(0.995) {
-                    let (_, aud1, eve) = &garbo[rng.gen_range(0..garbo.len())];
-                    let (_, aud2, adam) = &garbo[rng.gen_range(0..garbo.len())];
-    
-                    let aud: Vec<i16> = mix_audio(aud1, aud2, 0.333);
-                    
-                    if rng.gen_bool(0.2) {
-                        (aud, eve.mutate())
-                    } else {
-                        (aud, eve.befriend(adam).mutate())
-                    }
+            let (par_info, gen) = {
+                let (eve, eve_info) = &garbo[rng.gen_range(0..garbo.len())];
+                let (adam, adam_info)= &garbo[rng.gen_range(0..garbo.len())];
+
+                let aud: Vec<i16> = mix_audio(&eve_info.audio, &adam_info.audio, 0.333);
+                
+                if rng.gen_bool(0.2) {
+                    (eve_info, eve.mutate())
                 } else {
-                    (noisy_seed.clone(), Animal::spontaneous_generation())
-                };
-                (aud, gen)
+                    (eve_info, eve.befriend(adam).mutate())
+                }
             };
             if !screen(&gen) {
                 continue; // screening failed, not viable
             }
-            let (aud, gas) = gen.feed(&par_aud);
+            let (aud, gas) = gen.feed(&par_info.audio);
+            let spec = compute_spectrogram(&aud, &*r2c);
+            let sim = compare_spectrograms(&spec, &par_info.spectrogram);
 
-            let sim = spectral_fitness(&aud, &par_aud, &*r2c);
             if sim > args.parent_child_diff {
-                let f = spectral_fitness(&aud, &seed, &*r2c) * gas as f64;
-                garbo.push((f, aud, gen));
+                let f = compare_spectrograms(&spec, &seed_spec) * gas as f64;
+                let info = AnimalInfo { fitness: f, audio: aud, spectrogram:  spec };
+                garbo.push((gen, info));
                 debug!("Population size: {:?}", garbo.len());
             }
         }
@@ -222,7 +224,7 @@ fn main() -> color_eyre::Result<()> {
             .filter_map(|_| {
                 let mut rng = rand::thread_rng();
 
-                let (par_aud, gen) = {
+                let (gen, parent_info) = {
                     let mut v;
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
@@ -233,7 +235,7 @@ fn main() -> color_eyre::Result<()> {
                         break;
                     }
 
-                    let (_, aud1, eve) = v;
+                    let (eve, eve_info) = v;
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
                         v = &garbo[idx];
@@ -242,54 +244,62 @@ fn main() -> color_eyre::Result<()> {
                         }
                         break;
                     }
-                    let (_, aud2, _) = v;
+                    let (adam, adam_info) = v;
 
                     let aud: Vec<i16> =
-                        aud1.iter().zip(aud2.iter()).map(|(&a, &b)| a + b).collect();
+                        eve_info.audio.iter().zip(adam_info.audio.iter()).map(|(&a, &b)| a + b).collect();
 
                     let gen = eve.mutate();
-                    (aud, gen)
+                    (gen, eve_info)
                 };
 
                 if !screen(&gen) {
                     return None; // screening failed, not viable
                 }
 
-                let (aud, gas) = gen.feed(&par_aud);
+                let (aud, gas) = gen.feed(&parent_info.audio);
     
-                let sim = spectral_fitness(&aud, &par_aud, &*r2c);
+                let spec = compute_spectrogram(&aud, &*r2c);
+
+                let sim = compare_spectrograms(&spec, &parent_info.spectrogram);
                 if sim > args.parent_child_diff {
-                    let f = spectral_fitness(&aud, &seed, &*r2c) * gas as f64;
-                    Some((f, aud, gen))
+                    let f = compare_spectrograms(&spec, &seed_spec) * (gas as f64);
+                    let info = AnimalInfo {
+                        fitness: f,
+                        audio: aud,
+                        spectrogram: spec
+                    };
+                    Some((gen, info))
                 } else {
                     None
                 }
             })
             .collect::<Vec<_>>();
 
-        let cutoff = garbo[garbo.len() - 1].0;
-        for (f, aud, gen) in news {
-            if f >= cutoff && rng.gen_bool(0.995) {
+        let cutoff = garbo[garbo.len() - 1].1.fitness;
+        for (gen, info) in news {
+            if info.fitness >= cutoff && rng.gen_bool(0.995) {
                 continue;
             }
+
             // horrible wasteful augh
             // do insertion sort lol
-            garbo.push((f, aud, gen));
+            garbo.push((gen, info));
         }
 
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
-        garbo.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        garbo.sort_unstable_by(|a, b| a.1.fitness.partial_cmp(&b.1.fitness).unwrap());
         garbo.dedup_by(|a, b| {
             // cache this. what are you Doing. FREEPERF
-            let sim = spectral_fitness(&a.1, &b.1, &*r2c);
+            let sim = compare_spectrograms(&a.1.spectrogram, &b.1.spectrogram);
             sim <= args.parent_child_diff
         }); 
-        f_history.push((i as f64, garbo[0].0.ln()));
+        f_history.push((i as f64, garbo[0].1.fitness.ln()));
         // i don't think we need this is_finite anymore, spectral similarity used to occasionally let a lil' +/-inf slip through
         // which screwed up averages forever
 
-        let avg = (garbo.iter().map(|x| x.0).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
+        let avg = (garbo.iter().map(|x| x.1.fitness).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
         a_history.push((i as f64, avg.ln()));
 
         let datasets = vec![
@@ -356,7 +366,7 @@ fn main() -> color_eyre::Result<()> {
                     Spans::from(Span::raw(format!("gen {}/{}", i, args.generations))),
                     Spans::from(vec![
                         Span::raw("best loss: "),
-                        Span::styled(format!("{:16}", garbo[0].0), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:16}", garbo[0].1.fitness), Style::default().add_modifier(Modifier::BOLD))
                     ]),
     
                     Spans::from(vec![
