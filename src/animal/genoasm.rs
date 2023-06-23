@@ -2,7 +2,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use rand::Rng;
 
-use crate::animal::Animal;
+use crate::{animal::Animal, util::normalize_audio};
 
 pub const NUM_REGISTERS: u8 = 16;
 
@@ -19,11 +19,11 @@ pub const STACK_SIZE: usize = 256;
 
 #[derive(Clone)]
 pub struct Genoasm {
-    pub instructions: [Instruction; NUM_INSTRUCTIONS],
-    pub lut: [i16; LUT_SIZE]
+    pub instructions: Box<[Instruction; NUM_INSTRUCTIONS]>,
+    pub lut: Box<[i16; LUT_SIZE]>,
 }
 impl Genoasm {
-    pub fn feed(&self, audio: &[i16]) -> Vec<i16> {
+    pub fn feed(&self, audio: &[i16]) -> (Vec<i16>, u64) {
         let out_areg: Vec<i16> = std::iter::repeat(0).take(audio.len()).collect();
 
         let mut aregs: [Vec<i16>; NUM_REGISTERS as usize] = Default::default();
@@ -34,6 +34,8 @@ impl Genoasm {
             areg.push(0);
         }
 
+        let gas_limit = 128 * audio.len() as u64;
+
         let mut vm = VmState {
             pc: 0,
             flags: 0,
@@ -42,9 +44,9 @@ impl Genoasm {
             areg_playheads: [0; NUM_REGISTERS as usize],
             stack: [0; STACK_SIZE],
             stack_pointer: 0,
-            gas: 300 * audio.len() as u64
+            gas: gas_limit,
         };
-        
+
         let mut status = VmRunResult::Continue;
         while status == VmRunResult::Continue {
             status = vm.run_insn(&self.instructions[vm.pc as usize]);
@@ -54,27 +56,33 @@ impl Genoasm {
             return std::iter::repeat(0).take(audio.len()).collect();
         }*/
         let f = vm.aregs[1].clone(); // useless clone lol
-        let gain = i16::MAX as f32 / *f.iter().max().unwrap_or(&1) as f32;
-        f.into_iter().map(|x| (x as f32 * gain) as i16).collect()
+        (
+            normalize_audio(&f),
+            gas_limit + (gas_limit - vm.gas), // hack dont scale this here you doof
+        )
     }
 }
 
 impl Animal for Genoasm {
     fn spontaneous_generation() -> Self {
         let mut rng = rand::thread_rng();
-        let mut instructions = [Instruction([0; 4]); NUM_INSTRUCTIONS];
-        for insn in &mut instructions {
+        let mut instructions = Box::new([Instruction([0; 4]); NUM_INSTRUCTIONS]);
+        for insn in &mut *instructions {
             insn.0[0] = rng.gen_range(0..=Opcode::Filter as u8);
-            for q in &mut insn.0[1..] { if rng.gen_bool(0.6) {
-                *q = rng.gen();
-            } else {
-                let magics = [0u8, 1, 0x7F, 0x80, 0xFF];
-                *q = magics[rng.gen_range(0..magics.len())];
-            }}
+            for q in &mut insn.0[1..] {
+                if rng.gen_bool(0.975) {
+                    *q = rng.gen();
+                } else {
+                    let magics = [0u8, 1, 0x7F, 0x80, 0xFF];
+                    *q = magics[rng.gen_range(0..magics.len())];
+                }
+            }
         }
 
-        let mut lut = [0; LUT_SIZE];
-        for e in &mut lut { *e = rng.gen(); }
+        let mut lut = Box::new([0; LUT_SIZE]);
+        for e in &mut *lut {
+            *e = rng.gen();
+        }
 
         Genoasm { instructions, lut }
     }
@@ -84,35 +92,50 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..16384 {
-            match rng.gen_range(0..=1) {
+        for _ in 0..rng.gen_range(0..65536) {
+            match rng.gen_range(0..=2) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(0..4);
                     let shift = rng.gen_range(0..8);
-                    ant.instructions[idx].0[offset] ^= 1<<shift;
+                    ant.instructions[idx].0[offset] ^= 1 << shift;
                 },
-                _  => {
+                1 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(0..4);
-                    let add = rng.gen_range(0..=16);
-                    ant.instructions[idx].0[offset] = ant.instructions[idx].0[offset].wrapping_add(add);
+                    let new = rng.gen();
+                    ant.instructions[idx].0[offset] = new;
+                }
+                _ => {
+                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    let offset = rng.gen_range(0..4);
+                    let add = rng.gen_range(-16..=16);
+                    ant.instructions[idx].0[offset] =
+                        ant.instructions[idx].0[offset].wrapping_add_signed(add);
                 }
             }
         }
 
-        // mutate instructions
-        for _ in 0..512 {
-            match rng.gen_range(0..=1) {
+        // mutate LUT
+        for _ in 0..256 {
+            match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..LUT_SIZE);
                     let shift = rng.gen_range(0..8);
-                    ant.lut[idx] ^= 1<<shift;
-                },
-                _  => {
+                    ant.lut[idx] ^= 1 << shift;
+                }
+                1 => {
                     let idx = rng.gen_range(0..LUT_SIZE);
-                    let add = rng.gen_range(0..=16);
+                    let add = rng.gen_range(-16..=16);
                     ant.lut[idx] = ant.lut[idx].wrapping_add(add);
+                }
+                2 => {
+                    let idx = rng.gen_range(0..LUT_SIZE - 1);
+                    ant.lut[idx + 1] = ant.lut[idx];
+                }
+                _ => {
+                    let idx = rng.gen_range(0..LUT_SIZE - 1);
+                    ant.lut[idx] = ant.lut[idx + 1];
                 }
             }
         }
@@ -125,9 +148,8 @@ pub enum Flag {
     Equal = 0,
     SignedLessThan = 1,
     UnsignedLessThan = 2,
-    Negative = 3
+    Negative = 3,
 }
-
 
 #[repr(u8)]
 #[derive(FromPrimitive, Debug, Copy, Clone, PartialEq, Eq)]
@@ -135,14 +157,14 @@ pub enum Opcode {
     Nop,
 
     /// Jump to PC + (IMM16_B) if IMM8[0] == 0, else jump to IMM16_B
-    Jmp, 
+    Jmp,
     SkipIf, // Jump to PC + 8 (skip next insn) if (FLAGS & IMMA_8 == IMMA_8) && (FLAGS & IMMB_8 == 0)
 
     Const16, // REG_A = IMM16_B
-    Mov, // REG_A = REG_B
+    Mov,     // REG_A = REG_B
 
-    Add, // add. accum = REG_A + REG_B + IMM8_C
-    Sub, // subtract. see above but negating REG_B
+    Add,  // add. accum = REG_A + REG_B + IMM8_C
+    Sub,  // subtract. see above but negating REG_B
     Test, // compare REG_A to (REG_B + IMM8_C), setting flags
 
     Mul, // signed integer mult: accum = REG_B * REG_C, high bits in REG_A
@@ -152,12 +174,12 @@ pub enum Opcode {
     Xor, // bitwise XOR: accum = A^(B+IMM_C)
 
     Push, // push REG_A onto stack
-    Pop, // set REG_A from stack. terminates program if called with empty stack.
+    Pop,  // set REG_A from stack. terminates program if called with empty stack.
 
     Call, // push PC+4 to stack, then push stack pointer to stack, then act as Jmp
-    Ret, // pop stack pointer, pop pc
+    Ret,  // pop stack pointer, pop pc
 
-    In,  // In one sample to AREG (at playhead, advancing)
+    In,   // In one sample to AREG (at playhead, advancing)
     Out,  // Out one sample from AREG (at playhead, advancing)
     Tell, // store AREG_A playhead to REG_B
     Seek, // Set AREG_A playhead to REG_B
@@ -178,7 +200,7 @@ impl Instruction {
 
     pub fn get_operand_imm16(&self, idx: u8) -> u16 {
         let idx = idx as usize;
-        u16::from_le_bytes(self.0[idx + 1 .. idx + 3].try_into().expect("infallible..."))
+        u16::from_le_bytes(self.0[idx + 1..idx + 3].try_into().expect("infallible..."))
     }
 }
 
@@ -186,7 +208,7 @@ impl Instruction {
 pub enum VmRunResult {
     Continue,
     Stop,
-    OutOfGas
+    OutOfGas,
 }
 
 pub struct VmState {
@@ -205,13 +227,20 @@ pub struct VmState {
 }
 impl VmState {
     fn burn_gas(&mut self, gas: u64) {
-        if self.gas > gas { self.gas -= gas; } 
-        else { self.gas = 0; }
+        if self.gas > gas {
+            self.gas -= gas;
+        } else {
+            self.gas = 0;
+        }
     }
     fn get_reg(&mut self, idx: u8) -> u16 {
         let idx = idx % NUM_REGISTERS;
-        
-        if idx == REG_ZERO { 0 } else { self.regs[idx as usize] }
+
+        if idx == REG_ZERO {
+            0
+        } else {
+            self.regs[idx as usize]
+        }
     }
     fn set_reg(&mut self, idx: u8, val: u16) {
         let idx = idx % NUM_REGISTERS;
@@ -228,8 +257,9 @@ impl VmState {
         self.stack_pointer = (self.stack_pointer + 1) % STACK_SIZE as u16;
     }
     fn pop_stack(&mut self) -> Option<u16> {
-        if self.stack_pointer == 0 { None }
-        else {
+        if self.stack_pointer == 0 {
+            None
+        } else {
             self.stack_pointer -= 1;
             Some(self.stack[self.stack_pointer as usize])
         }
@@ -265,47 +295,51 @@ impl VmState {
                 }
 
                 if insn.get_operand_imm8(0) & 0x1 == 0 {
-                    self.pc = self.pc.wrapping_add(insn.get_operand_imm16(1)).wrapping_sub(1);
+                    self.pc = self
+                        .pc
+                        .wrapping_add(insn.get_operand_imm16(1))
+                        .wrapping_sub(1);
                 } else {
                     self.pc = insn.get_operand_imm16(1);
                 }
-            },
+            }
             SkipIf => {
                 let a = insn.get_operand_imm8(0);
                 let b = insn.get_operand_imm8(1);
-                let c = insn.get_operand_imm8(2);
 
                 let taken = (self.flags & a == a) && (self.flags & b == 0);
 
                 if taken {
                     self.pc += 1;
                 }
-            },
+            }
             Const16 => {
                 self.set_reg(insn.get_operand_imm8(0), insn.get_operand_imm16(1));
-            },
+            }
             Mov => {
                 let val = self.get_reg(insn.get_operand_imm8(1));
                 self.set_reg(insn.get_operand_imm8(1), val);
             }
             Add => {
-                let sum = self.get_reg(insn.get_operand_imm8(0))
+                let sum = self
+                    .get_reg(insn.get_operand_imm8(0))
                     .wrapping_add(self.get_reg(insn.get_operand_imm8(1)))
                     .wrapping_add(insn.get_operand_imm8(2) as u16);
 
                 self.set_reg(REG_ACCUMULATOR, sum);
-            },
+            }
             Sub => {
-                let sum = self.get_reg(insn.get_operand_imm8(0))
-                    .wrapping_sub(
-                        self.get_reg(insn.get_operand_imm8(1))
-                            .wrapping_add(insn.get_operand_imm8(2) as u16));
+                let sum = self.get_reg(insn.get_operand_imm8(0)).wrapping_sub(
+                    self.get_reg(insn.get_operand_imm8(1))
+                        .wrapping_add(insn.get_operand_imm8(2) as u16),
+                );
 
                 self.set_reg(REG_ACCUMULATOR, sum);
-            },
+            }
             Test => {
                 let lhs = self.get_reg(insn.get_operand_imm8(0));
-                let rhs = self.get_reg(insn.get_operand_imm8(1))
+                let rhs = self
+                    .get_reg(insn.get_operand_imm8(1))
                     .wrapping_add(insn.get_operand_imm8(2) as u16);
 
                 self.flags = 0;
@@ -319,7 +353,7 @@ impl VmState {
                 if (lhs as i16) < (rhs as i16) {
                     self.flags |= Flag::SignedLessThan as u8;
                 }
-            },
+            }
             Mul => {
                 let lhs = self.get_reg(insn.get_operand_imm8(1)) as i16 as i32;
                 let rhs = self.get_reg(insn.get_operand_imm8(2)) as i16 as i32;
@@ -330,7 +364,7 @@ impl VmState {
 
                 self.set_reg(REG_ACCUMULATOR, hi);
                 self.set_reg(insn.get_operand_imm8(0), lo);
-            },
+            }
             Div => {
                 let lhs = self.get_reg(insn.get_operand_imm8(1)) as i16;
                 let rhs = self.get_reg(insn.get_operand_imm8(2)) as i16;
@@ -338,56 +372,60 @@ impl VmState {
                 let product = lhs.checked_div(rhs).unwrap_or(0);
 
                 self.set_reg(REG_ACCUMULATOR, product as u16);
-            },
+            }
 
             Xor => {
                 let lhs = self.get_reg(insn.get_operand_imm8(0));
-                let rhs = self.get_reg(insn.get_operand_imm8(1))
+                let rhs = self
+                    .get_reg(insn.get_operand_imm8(1))
                     .wrapping_add(insn.get_operand_imm8(2) as u16);
 
                 self.set_reg(REG_ACCUMULATOR, lhs ^ rhs);
-            },
+            }
 
             Push => {
                 let val = self.get_reg(insn.get_operand_imm8(0));
                 self.push_stack(val);
-            },
+            }
             Pop => {
                 if let Some(val) = self.pop_stack() {
                     self.set_reg(insn.get_operand_imm8(0), val);
                 } else {
                     res = VmRunResult::Stop
                 }
-            },
+            }
 
             // CALL implemented at JMP
             Ret => {
                 self.stack_pointer = self.get_reg(REG_BP) % STACK_SIZE as u16;
-                if let Some((bp, pc)) = self.pop_stack().and_then(|bp| self.pop_stack().map(|pc| (bp, pc))) {
+                if let Some((bp, pc)) = self
+                    .pop_stack()
+                    .and_then(|bp| self.pop_stack().map(|pc| (bp, pc)))
+                {
                     self.set_reg(REG_BP, bp);
                     self.pc = pc;
                 } else {
                     res = VmRunResult::Stop;
                 }
-            },
+            }
 
             In => {
                 let sample = {
-                    let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
+                    //let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
                     let idx = 0; // HACK for effiency lol
                     let sample = self.aregs[idx][self.areg_playheads[idx]];
                     self.advance_playhead(idx);
                     sample
                 };
                 self.set_reg(insn.get_operand_imm8(1), sample as u16);
-            },
+            }
             Out => {
                 let sample = self.get_reg(insn.get_operand_imm8(1));
 
                 let idx = 1; // HACK, EFF //insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
                 self.aregs[idx][self.areg_playheads[idx]] = sample as i16;
                 self.advance_playhead(idx);
-            },
+            }
             Tell => {
                 let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
 
@@ -396,22 +434,23 @@ impl VmState {
             Seek => {
                 let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
 
-                let val = self.get_reg(insn.get_operand_imm8(1)) % (self.aregs[idx].len() as u16);
+                let val = self.get_reg(insn.get_operand_imm8(1)) as usize % (self.aregs[idx].len());
 
                 let imm = insn.get_operand_imm8(2);
 
                 if imm & 0x1 == 0 {
-                    self.areg_playheads[idx] = val as usize;
+                    self.areg_playheads[idx] = val;
                 } else {
-                    self.areg_playheads[idx] = (self.areg_playheads[idx] + val as usize) % self.aregs[idx].len();
+                    self.areg_playheads[idx] =
+                        (self.areg_playheads[idx] + val) % self.aregs[idx].len();
                 }
-            },
+            }
             Filter => {
                 let imm = insn.get_operand_imm8(0);
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
 
-                self.burn_gas(kernel_size as u64);
+                self.burn_gas(kernel_size as u64 / 2);
 
                 let kernel_idx = (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
                 let kernel = &self.aregs[kernel_idx];
@@ -421,7 +460,7 @@ impl VmState {
 
                 let mut kernel_playhead = self.areg_playheads[kernel_idx];
                 let mut audio_playhead = self.areg_playheads[audio_idx];
-                
+
                 let mut out_full = 0i32;
                 for _ in 0..kernel_size {
                     kernel_playhead = (kernel_playhead + 1) % kernel.len();
@@ -436,8 +475,6 @@ impl VmState {
                 let out = (out_full >> 16) as i16;
                 self.set_reg(REG_ACCUMULATOR, out as u16);
             }
-            
-            unimpl => todo!("{unimpl:?}")
         }
 
         res
