@@ -58,7 +58,7 @@ impl Genoasm {
         let f = vm.aregs[1].clone(); // useless clone lol
         (
             normalize_audio(&f),
-            gas_limit + (gas_limit - vm.gas), // hack dont scale this here you doof
+            (u64::BITS - (gas_limit - vm.gas).leading_zeros()) as u64 // hack dont scale this here you doof
         )
     }
 }
@@ -81,8 +81,26 @@ impl Animal for Genoasm {
 
         let mut lut = Box::new([0; LUT_SIZE]);
         for e in &mut *lut {
-            *e = rng.gen();
+            *e = 0; // i guess? maybe less prone to generating random noise
         }
+
+        Genoasm { instructions, lut }
+    }
+
+    fn befriend(&self, friend: &Self) -> Self {
+        let mut rng = rand::thread_rng();
+
+        let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
+        let insn_end = insn_split_point + rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point);
+        let lut_split_point = rng.gen_range(0..LUT_SIZE);
+        let lut_end = lut_split_point + rng.gen_range(0..LUT_SIZE - lut_split_point);
+
+        
+        let mut instructions = self.instructions.clone();
+        let mut lut = self.lut.clone();
+
+        instructions[insn_split_point..insn_end].copy_from_slice(&friend.instructions[insn_split_point..insn_end]);
+        lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
         Genoasm { instructions, lut }
     }
@@ -92,7 +110,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..rng.gen_range(0..65536) {
+        for _ in 0..(1<<rng.gen_range(8..=17)) {
             match rng.gen_range(0..=2) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
@@ -117,7 +135,7 @@ impl Animal for Genoasm {
         }
 
         // mutate LUT
-        for _ in 0..256 {
+        for _ in 0..768 {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..LUT_SIZE);
@@ -425,6 +443,10 @@ impl VmState {
                 let idx = 1; // HACK, EFF //insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
                 self.aregs[idx][self.areg_playheads[idx]] = sample as i16;
                 self.advance_playhead(idx);
+
+                if self.areg_playheads[idx] == 0 {
+                    res = VmRunResult::Stop;
+                }
             }
             Tell => {
                 let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;

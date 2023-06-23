@@ -1,5 +1,5 @@
 use animal::{genoasm, Animal};
-use tui::{widgets::{Dataset, Chart, Block, GraphType, Axis, Paragraph, Wrap, Borders}, symbols, style::{Style, Color, Modifier}, text::{Span, Spans}, layout::{Alignment, Layout, Direction, Constraint}};
+use tui::{widgets::{Dataset, Chart, Block, GraphType, Axis, Paragraph, Wrap, Borders, Gauge}, symbols, style::{Style, Color, Modifier}, text::{Span, Spans}, layout::{Alignment, Layout, Direction, Constraint}};
 use rand::{distributions::Uniform, Rng};
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
@@ -36,6 +36,14 @@ struct Args {
     /// Generations
     #[arg(short, long, default_value_t = 8192)]
     generations: usize,
+
+    /// Min difference between parent and child
+    #[arg(short, long, default_value_t = 1e6)]
+    parent_child_diff: f64,
+
+    /// FFT size used for similarity computations
+    #[arg(short, long, default_value_t = 512)]
+    fft_size: usize,
 }
 
 use util::normalize_audio;
@@ -92,14 +100,14 @@ fn main() -> color_eyre::Result<()> {
         }
     };
 
-    let mut seed = normalize_audio(&seed?);
-    while !seed.len().is_power_of_two() {
+    let seed = normalize_audio(&seed?);
+    /*while !seed.len().is_power_of_two() {
         seed.push(0); // we want that fast FFT... sigh...
-    }
+    }*/
 
     // prep fft stuff for scoring similarity
     let mut real_planner = RealFftPlanner::<f32>::new();
-    let r2c = real_planner.plan_fft_forward(1024);
+    let r2c = real_planner.plan_fft_forward(args.fft_size);
 
     let mut rng = rand::thread_rng();
 
@@ -108,13 +116,26 @@ fn main() -> color_eyre::Result<()> {
         .take(seed.len())
         .collect();
 
-    let noisy_seed = mix_audio(&seed, &noise, 0.9);
-    // let noisy_seed = normalize_audio(&noisy_seed);
+    let noisy_seed = mix_audio(&seed, &noise, 0.75);
+    let noisy_seed = normalize_audio(&noisy_seed);
 
     let mut eve;
     debug!("Generating Eve(s)");
     for i in 0..args.num_eves {
         debug!("{i}/{} Eves", args.num_eves);
+
+
+        terminal.clear()?;
+        terminal.draw(|f| {
+            let size = f.size();
+
+            let gauge = Gauge::default()
+                .label("Generating Eve(s)")
+                .gauge_style(Style::default().fg(Color::LightCyan).bg(Color::Black))
+                .ratio((i as f64) / args.num_eves as f64);
+
+            f.render_widget(gauge, size)
+        })?;
 
         loop {
             eve = genoasm::Genoasm::spontaneous_generation();
@@ -131,31 +152,50 @@ fn main() -> color_eyre::Result<()> {
     let mut f_history = vec![];
     let mut a_history = vec![];
     for i in 0..args.generations {
-        while garbo.len() > args.population_size {
-            if rng.gen_bool(0.9) {
-                let q = rng.gen_range(8..16);
-                let death = rng.gen_range(garbo.len() * q / 16..garbo.len());
-                garbo.remove(death);
-            } else {
-                garbo.pop();
+        if i % 256 == 0 {
+            let mut writer = hound::WavWriter::create(&args.output, spec).unwrap();
+
+            for (_, aud, _) in &garbo {
+                for s in aud {
+                    writer.write_sample(*s)?;
+                }
             }
+        
+            writer.finalize().unwrap();        
+        }
+
+
+        while garbo.len() > args.population_size {
+            // free perf: use retain or whatever to not do an O(n) operation in a loop
+            let q = 6;
+            let death = rng.gen_range(garbo.len() * q / 16..garbo.len() * 15/16);
+            garbo.remove(death);
         }
         while garbo.len() < args.population_size {
-            let (aud, gen) = {
-                let (_, aud1, eve) = &garbo[rng.gen_range(0..garbo.len())];
-                let (_, aud2, _) = &garbo[rng.gen_range(0..garbo.len())];
-
-                let aud: Vec<i16> = aud1.iter().zip(aud2.iter()).map(|(&a, &b)| a + b).collect();
-
-                let gen = if rng.gen_bool(0.99) {
-                    eve.mutate()
+            let (par_aud, gen) = {
+                let (aud, gen) = if rng.gen_bool(0.995) {
+                    let (_, aud1, eve) = &garbo[rng.gen_range(0..garbo.len())];
+                    let (_, aud2, adam) = &garbo[rng.gen_range(0..garbo.len())];
+    
+                    let aud: Vec<i16> = mix_audio(aud1, aud2, 0.333);
+                    
+                    if rng.gen_bool(0.2) {
+                        (aud, eve.mutate())
+                    } else {
+                        (aud, eve.befriend(adam).mutate())
+                    }
                 } else {
-                    Animal::spontaneous_generation()
+                    (noisy_seed.clone(), Animal::spontaneous_generation())
                 };
                 (aud, gen)
             };
-            if screen(&gen) {
-                let (aud, gas) = gen.feed(&aud);
+            if !screen(&gen) {
+                continue; // screening failed, not viable
+            }
+            let (aud, gas) = gen.feed(&par_aud);
+
+            let sim = spectral_fitness(&aud, &par_aud, &*r2c);
+            if sim > args.parent_child_diff {
                 let f = spectral_fitness(&aud, &seed, &*r2c) * gas as f64;
                 garbo.push((f, aud, gen));
                 debug!("Population size: {:?}", garbo.len());
@@ -164,17 +204,17 @@ fn main() -> color_eyre::Result<()> {
 
         debug!("Generation {:?}", i);
 
-        let news = (0..128)
+        let news = (0..512)
             .into_par_iter()
             .filter_map(|_| {
                 let mut rng = rand::thread_rng();
 
-                let (aud, gen) = {
+                let (par_aud, gen) = {
                     let mut v;
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
                         v = &garbo[idx];
-                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.6)) {
+                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.8)) {
                             continue;
                         }
                         break;
@@ -184,7 +224,7 @@ fn main() -> color_eyre::Result<()> {
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
                         v = &garbo[idx];
-                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.6)) {
+                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.8)) {
                             continue;
                         }
                         break;
@@ -198,11 +238,15 @@ fn main() -> color_eyre::Result<()> {
                     (aud, gen)
                 };
 
-                if screen(&gen) {
-                    let (aud, gas) = gen.feed(&aud);
+                if !screen(&gen) {
+                    return None; // screening failed, not viable
+                }
 
+                let (aud, gas) = gen.feed(&par_aud);
+    
+                let sim = spectral_fitness(&aud, &par_aud, &*r2c);
+                if sim > args.parent_child_diff {
                     let f = spectral_fitness(&aud, &seed, &*r2c) * gas as f64;
-
                     Some((f, aud, gen))
                 } else {
                     None
@@ -212,7 +256,7 @@ fn main() -> color_eyre::Result<()> {
 
         let cutoff = garbo[garbo.len() - 1].0;
         for (f, aud, gen) in news {
-            if f >= cutoff && rng.gen_bool(0.99) {
+            if f >= cutoff && rng.gen_bool(0.995) {
                 continue;
             }
             // horrible wasteful augh
@@ -221,26 +265,29 @@ fn main() -> color_eyre::Result<()> {
         }
 
         garbo.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        garbo.dedup_by(|a, b| a.1 == b.1); // remove anything with same audio (won't work if two things have exact same fitness whatever)
-        f_history.push((i as f64, garbo[0].0));
-        let avg = (garbo.iter().map(|x| x.0).sum::<f64>()) / garbo.len() as f64;
-        a_history.push((i as f64, avg));
+        garbo.dedup_by(|a, b| {
+            let sim = spectral_fitness(&a.1, &b.1, &*r2c);
+            sim <= args.parent_child_diff
+        }); // remove anything with same audio (won't work if two things have exact same fitness whatever)
+        f_history.push((i as f64, garbo[0].0.ln()));
+        let avg = (garbo.iter().map(|x| x.0).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
+        a_history.push((i as f64, avg.ln()));
 
         let datasets = vec![
+            Dataset::default()
+                .name("Mean")
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(Color::Green))
+                .data(&a_history),
             Dataset::default()
                 .name("Min")
                 .marker(symbols::Marker::Braille)
                 .graph_type(GraphType::Line)
                 .style(Style::default().fg(Color::Cyan))
                 .data(&f_history),
-            Dataset::default()
-                .name("Mean")
-                .marker(symbols::Marker::Braille)
-                .graph_type(GraphType::Line)
-                .style(Style::default().fg(Color::Green))
-                .data(&a_history)
         ];
-        let annoying_max = if i > 64 { a_history[64].1 } else { a_history[0].1};
+        let annoying_max = a_history[0].1;
         let chart = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(Axis::default()
@@ -294,7 +341,7 @@ fn main() -> color_eyre::Result<()> {
     
                     Spans::from(vec![
                         Span::styled("vibes: ", Style::default()),
-                        Span::styled("middling", Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled("sleepy", Style::default().add_modifier(Modifier::BOLD))
                     ]),
                     
                     Spans::from(vec![
@@ -316,15 +363,6 @@ fn main() -> color_eyre::Result<()> {
         })?;
     }
 
-    let mut writer = hound::WavWriter::create(args.output, spec).unwrap();
-
-    for (_, aud, _) in garbo {
-        for s in aud {
-            writer.write_sample(s)?;
-        }
-    }
-
-    writer.finalize().unwrap();
 
     Ok(())
 }
