@@ -33,17 +33,30 @@ struct Args {
     #[arg(short, long, default_value_t = 256)]
     population_size: usize,
 
-    /// Generations
+    /// Generations.
     #[arg(short, long, default_value_t = 8192)]
     generations: usize,
 
-    /// Min difference between parent and child
+    /// Min difference between parent and child.
+    /// 
+    /// This probably should be higher for longer inputs...
     #[arg(short, long, default_value_t = 1e6)]
     parent_child_diff: f64,
 
     /// FFT size used for similarity computations
     #[arg(short, long, default_value_t = 512)]
     fft_size: usize,
+
+    /// Attenuates genoASM's tendency to prefer lower-loss parents
+    /// when generating children. (i.e. higher explore = less preference for low-loss parents)
+    /// 
+    /// range: 0..+inf, though 0..1.0 is probably best
+    /// 
+    /// extremely low (i.e. much less than 0.1)
+    /// values may cause slightly noticeable CPU usage because of the use of
+    /// rejection sampling
+    #[arg(short, long, default_value_t = 0.2)]
+    explore: f64,
 }
 
 use util::normalize_audio;
@@ -116,7 +129,7 @@ fn main() -> color_eyre::Result<()> {
         .take(seed.len())
         .collect();
 
-    let noisy_seed = mix_audio(&seed, &noise, 0.75);
+    let noisy_seed = mix_audio(&seed, &noise, 0.33);
     let noisy_seed = normalize_audio(&noisy_seed);
 
     let mut eve;
@@ -214,7 +227,7 @@ fn main() -> color_eyre::Result<()> {
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
                         v = &garbo[idx];
-                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.8)) {
+                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)) {
                             continue;
                         }
                         break;
@@ -224,7 +237,7 @@ fn main() -> color_eyre::Result<()> {
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
                         v = &garbo[idx];
-                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(0.8)) {
+                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)) {
                             continue;
                         }
                         break;
@@ -264,12 +277,18 @@ fn main() -> color_eyre::Result<()> {
             garbo.push((f, aud, gen));
         }
 
+        // again there's no excuse not to do insertion sort here
+        // partition_point just always screws me up w/ off-by-ones
         garbo.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         garbo.dedup_by(|a, b| {
+            // cache this. what are you Doing. FREEPERF
             let sim = spectral_fitness(&a.1, &b.1, &*r2c);
             sim <= args.parent_child_diff
-        }); // remove anything with same audio (won't work if two things have exact same fitness whatever)
+        }); 
         f_history.push((i as f64, garbo[0].0.ln()));
+        // i don't think we need this is_finite anymore, spectral similarity used to occasionally let a lil' +/-inf slip through
+        // which screwed up averages forever
+
         let avg = (garbo.iter().map(|x| x.0).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
         a_history.push((i as f64, avg.ln()));
 
@@ -300,6 +319,7 @@ fn main() -> color_eyre::Result<()> {
                 .bounds([f_history[f_history.len() - 1].1, annoying_max]));
 
         terminal.clear()?;
+        // inexcusable to just have this ,, sitting here in the main loop lmao
         terminal.draw(|f| {
             let size = f.size();
     
