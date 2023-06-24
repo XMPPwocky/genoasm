@@ -235,8 +235,8 @@ impl VmState {
 
             In => {
                 let sample = {
-                    //let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
-                    let idx = 0; // HACK for effiency lol
+                    //let idx = ( % NUM_REGISTERS) as usize;
+                    let idx = (insn.get_operand_imm8(0) % 2) as usize; // HACK for effiency lol
                     let sample = self.aregs[idx][self.areg_playheads[idx]];
                     self.advance_playhead(idx);
                     sample
@@ -246,7 +246,7 @@ impl VmState {
             Out => {
                 let sample = self.get_reg(insn.get_operand_imm8(1));
 
-                let idx = 1; // HACK, EFF //insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
+                let idx = 2; // HACK, EFF //insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
                 self.aregs[idx][self.areg_playheads[idx]] = sample as i16;
                 self.advance_playhead(idx);
 

@@ -8,18 +8,19 @@ pub struct Genoasm {
     pub lut: Box<[i16; LUT_SIZE]>,
 }
 impl Genoasm {
-    pub fn feed(&self, audio: &[i16]) -> (Vec<i16>, u64) {
+    pub fn feed(&self, audio: &[i16], audio2: Option<&[i16]>) -> (Vec<i16>, u64) {
         let out_areg: Vec<i16> = std::iter::repeat(0).take(audio.len()).collect();
 
         let mut aregs: [Vec<i16>; NUM_REGISTERS as usize] = Default::default();
         aregs[0] = audio.to_vec();
-        aregs[1] = out_areg;
-        aregs[2] = self.lut.to_vec();
-        for areg in &mut aregs[2..] {
+        aregs[1] = audio2.map(|aud2| aud2.to_vec()).unwrap_or_else(|| audio.to_vec());
+        aregs[2] = out_areg;
+        aregs[3] = self.lut.to_vec();
+        for areg in &mut aregs[4..] {
             areg.push(0);
         }
 
-        let gas_limit = 512 * audio.len() as u64;
+        let gas_limit = 128 * audio.len() as u64;
 
         let mut vm = VmState::new(aregs, gas_limit);
 
@@ -31,7 +32,7 @@ impl Genoasm {
             // penalize gas guzzlers - return 0... inefficient lol
             return std::iter::repeat(0).take(audio.len()).collect();
         }*/
-        let f = vm.aregs[1].clone(); // useless clone lol
+        let f = vm.aregs[2].clone(); // useless clone lol
         (
             normalize_audio(&f),
             1 // 00 + (u64::BITS - (gas_limit - vm.gas_remaining()).leading_zeros()) as u64 // hack dont scale this here you doof
@@ -86,7 +87,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(8..=12)) {
+        for _ in 0..(1<<rng.gen_range(9..=17)) {
             match rng.gen_range(0..=2) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);

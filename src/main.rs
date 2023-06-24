@@ -72,14 +72,14 @@ struct Args {
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
-    let (v, _) = gen.feed(&[0x1; 1024]);
+    let (v, _) = gen.feed(&[0x1; 1024], None);
     if v.iter().filter(|x| **x != 0).count() < 64 {
         return false;
     }
     if (v[v.len() / 2..]).iter().filter(|x| **x != 0).count() < 32 {
         return false;
     }
-    let (v2, _) = gen.feed(&[0xAD; 1024]);
+    let (v2, _) = gen.feed(&[0xAD; 1024], None);
     if v == v2 {
         return false;
     }
@@ -164,7 +164,7 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-        let (aud, gas) = eve.feed(&noisy_seed);
+        let (aud, gas) = eve.feed(&noisy_seed, None);
         let spec = compute_spectrogram(&aud, &*r2c);
         let f = spectral_fitness(&aud, &seed, &*r2c) * (gas as f64);
         let info = AnimalInfo {
@@ -213,25 +213,25 @@ fn main() -> color_eyre::Result<()> {
 
         while garbo.len() > args.population_size {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
-            let q = rng.gen_range(3..15); // yes, max 14, not off by one. see 15/16 max below
+            let q = rng.gen_range(7..15); // yes, max 14, not off by one. see 15/16 max below
             let death = rng.gen_range(garbo.len() * q / 16..garbo.len() * 15/16);
             garbo.remove(death);
         }
         while garbo.len() < args.population_size {
-            let (par_info, gen) = {
+            let (par_info, par2_info, gen) = {
                 let (eve, eve_info) = &garbo[rng.gen_range(0..garbo.len())];
                 let (adam, adam_info)= &garbo[rng.gen_range(0..garbo.len())];
 
-                if rng.gen_bool(0.2) {
-                    (eve_info, eve.mutate())
+                if rng.gen_bool(0.3) {
+                    (eve_info, eve_info, eve.mutate())
                 } else {
-                    (adam_info, eve.befriend(adam).mutate())
+                    (eve_info, adam_info, eve.befriend(adam).mutate())
                 }
             };
             if !screen(&gen) {
                 continue; // screening failed, not viable
             }
-            let (aud, gas) = gen.feed(&par_info.audio);
+            let (aud, gas) = gen.feed(&par_info.audio, Some(&par2_info.audio));
             let spec = compute_spectrogram(&aud, &*r2c);
             let sim = compare_spectrograms(&spec, &par_info.spectrogram);
 
@@ -250,7 +250,7 @@ fn main() -> color_eyre::Result<()> {
             .filter_map(|_| {
                 let mut rng = rand::thread_rng();
 
-                let (gen, parent_info, parent_audio) = {
+                let (gen, par_info, par2_info) = {
                     let mut v;
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
@@ -262,7 +262,7 @@ fn main() -> color_eyre::Result<()> {
                     }
 
                     let (eve, eve_info) = v;
-                    if rng.gen_bool(0.01) { // favor best candidate a lot for adam
+                    if rng.gen_bool(0.005) { // favor best candidate a lot for adam
                         v = &garbo[0];
                     } else {
                         loop {
@@ -277,27 +277,25 @@ fn main() -> color_eyre::Result<()> {
                     let (_adam, adam_info) = v;
 
                     let gen = eve.mutate();
-                    (gen, eve_info, &mix_audio(&eve_info.audio, &adam_info.audio, 0.5))
+                    (gen, eve_info, adam_info)
                 };
 
                 if !screen(&gen) {
                     return None; // screening failed, not viable
                 }
 
-                let (aud, gas) = gen.feed(parent_audio);
+                let (aud, gas) = gen.feed(&par_info.audio, Some(&par2_info.audio));
     
-                //gotta do this here because we mix
-                let parent_spec = compute_spectrogram(parent_audio, &*r2c);
                 let spec = compute_spectrogram(&aud, &*r2c);
 
-                let sim = compare_spectrograms(&spec, &parent_spec);
+                let sim = compare_spectrograms(&spec, &par_info.spectrogram);
                 let f = compare_spectrograms(&spec, &seed_spec) * (gas as f64);
                 let info = AnimalInfo {
                     cost: f,
                     audio: aud,
                     spectrogram: spec
                 };
-                if sim > args.parent_child_diff || f < parent_info.cost {
+                if sim > args.parent_child_diff {
                     Some((gen, info))
                 } else {
                     None
@@ -307,7 +305,7 @@ fn main() -> color_eyre::Result<()> {
 
         let cutoff = garbo[garbo.len() - 1].1.cost;
         for (gen, info) in news {
-            if info.cost >= cutoff && rng.gen_bool(0.95) {
+            if info.cost >= cutoff && rng.gen_bool(0.999) {
                 continue;
             }
 
