@@ -320,7 +320,7 @@ fn main() -> color_eyre::Result<()> {
         // which screwed up averages forever
 
         // secretly upper 50th %ile now :U
-        let avg = (garbo.iter().map(|x| x.1.cost).take(garbo.len()/2).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
+        let avg = (garbo.iter().map(|x| x.1.cost).take(garbo.len()/2).filter(|x| x.is_finite()).sum::<f64>()) / (garbo.len() / 2) as f64;
         a_history.push((i as f64, avg.ln()));
 
         let datasets = vec![
@@ -337,7 +337,7 @@ fn main() -> color_eyre::Result<()> {
                 .style(Style::default().fg(Color::Cyan))
                 .data(&f_history),
         ];
-        let annoying_max = a_history[0].1;
+        let annoying_max = f_history[0].1;
         let chart = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(Axis::default()
@@ -370,7 +370,7 @@ fn main() -> color_eyre::Result<()> {
                     Span::styled("ASM", Style::default().fg(Color::Green))
                 ]),
                 Spans::from(vec![
-                    Span::styled("ver: 0.0-", Style::default()),
+                    Span::styled("ver: 0.1-", Style::default()),
                     Span::styled("GHOST_CATCHER", Style::default().fg(Color::LightYellow).add_modifier(Modifier::ITALIC)),
                 ]),
                 Spans::from(vec![
@@ -398,7 +398,7 @@ fn main() -> color_eyre::Result<()> {
                     Spans::from(Span::raw(format!("gen {}/{}", i, args.generations))),
                     Spans::from(vec![
                         Span::raw("best loss: "),
-                        Span::styled(format!("{:+16e}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:+12e}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
                     ]),
     
                     Spans::from(vec![
