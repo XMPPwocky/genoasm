@@ -6,7 +6,7 @@ fn bin_to_band(bin: usize, base: f32) {
 
 }
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
-    let n_bands = inp.len().next_power_of_two().trailing_zeros() + 1;
+    let n_bands = inp.len().next_power_of_two().trailing_zeros() as usize + 1;
 
     let mut spectrums = vec![];
 
