@@ -1,8 +1,13 @@
 use realfft::{RealToComplex};
 pub type Spectrogram = Vec<Vec<f32>>;
 
+fn bin_to_band(bin: usize, base: f32) {
+    let bin = bin as f32;
+
+}
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
-    let n_bands = inp.len().next_power_of_two();
+    let n_bands = inp.len().next_power_of_two().trailing_zeros() + 1;
+
     let mut spectrums = vec![];
 
     let mut indata = r2c.make_input_vec();
