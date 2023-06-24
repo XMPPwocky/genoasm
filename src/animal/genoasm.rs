@@ -19,7 +19,7 @@ impl Genoasm {
             areg.push(0);
         }
 
-        let gas_limit = 128 * audio.len() as u64;
+        let gas_limit = 512 * audio.len() as u64;
 
         let mut vm = VmState::new(aregs, gas_limit);
 
@@ -34,8 +34,7 @@ impl Genoasm {
         let f = vm.aregs[1].clone(); // useless clone lol
         (
             normalize_audio(&f),
-            1 
-            //(u64::BITS - (gas_limit - vm.gas_remaining()).leading_zeros()) as u64 // hack dont scale this here you doof
+            1 // 00 + (u64::BITS - (gas_limit - vm.gas_remaining()).leading_zeros()) as u64 // hack dont scale this here you doof
         )
     }
 }

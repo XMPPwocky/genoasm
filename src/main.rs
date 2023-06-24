@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use animal::{genoasm, Animal};
 use tui::{widgets::{Dataset, Chart, Block, GraphType, Axis, Paragraph, Wrap, Borders, Gauge}, symbols, style::{Style, Color, Modifier}, text::{Span, Spans}, layout::{Alignment, Layout, Direction, Constraint}};
 use rand::Rng;
@@ -130,7 +132,8 @@ fn main() -> color_eyre::Result<()> {
     let mut rng = rand::thread_rng();
 
     let noisy_seed: Vec<i16> = seed.iter().cloned()
-        .map(|x| if rng.gen_bool(0.03) { x } else { 0 })
+        //.map(|x| if rng.gen_bool(0.03) { x } else { 0 })
+        .map(|_| 0)
         .collect::<Vec<i16>>();
 
     //lt noisy_seed = mix_audio(&seed, &noise, 0.1);
@@ -175,6 +178,7 @@ fn main() -> color_eyre::Result<()> {
     // do this up here i guess too
     garbo.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
     let mut best_cost = garbo[0].1.cost;
+    let mut last_best_time = Instant::now();
 
     let mut f_history = vec![];
     let mut a_history = vec![];
@@ -185,6 +189,7 @@ fn main() -> color_eyre::Result<()> {
     for i in 0..args.generations {
         if garbo[0].1.cost < best_cost {
             best_cost = garbo[0].1.cost;
+            last_best_time = Instant::now();
 
             if let Some(bw) = best_writer.as_mut() {
                 for s in &garbo[0].1.audio {
@@ -208,8 +213,8 @@ fn main() -> color_eyre::Result<()> {
 
         while garbo.len() > args.population_size {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
-            let q = 8;
-            let death = rng.gen_range(garbo.len() * q / 16..garbo.len() * 31/32);
+            let q = rng.gen_range(3..15); // yes, max 14, not off by one. see 15/16 max below
+            let death = rng.gen_range(garbo.len() * q / 16..garbo.len() * 15/16);
             garbo.remove(death);
         }
         while garbo.len() < args.population_size {
@@ -257,13 +262,17 @@ fn main() -> color_eyre::Result<()> {
                     }
 
                     let (eve, eve_info) = v;
-                    loop {
-                        let idx = rng.gen_range(0..garbo.len());
-                        v = &garbo[idx];
-                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)) {
-                            continue;
+                    if rng.gen_bool(0.01) { // favor best candidate a lot for adam
+                        v = &garbo[0];
+                    } else {
+                        loop {
+                            let idx = rng.gen_range(0..garbo.len());
+                            v = &garbo[idx];
+                            if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)) {
+                                continue;
+                            }
+                            break;
                         }
-                        break;
                     }
                     let (_adam, adam_info) = v;
 
@@ -298,7 +307,7 @@ fn main() -> color_eyre::Result<()> {
 
         let cutoff = garbo[garbo.len() - 1].1.cost;
         for (gen, info) in news {
-            if info.cost >= cutoff && rng.gen_bool(0.995) {
+            if info.cost >= cutoff && rng.gen_bool(0.95) {
                 continue;
             }
 
@@ -352,6 +361,9 @@ fn main() -> color_eyre::Result<()> {
         terminal.clear()?;
         // inexcusable to just have this ,, sitting here in the main loop lmao
         terminal.draw(|f| {
+            let time_since_last_best = Instant::now().duration_since(last_best_time).as_secs_f32();
+            // FIXME: colorize ^ 
+
             let size = f.size();
     
             let chunks = Layout::default()
@@ -402,8 +414,20 @@ fn main() -> color_eyre::Result<()> {
                     ]),
     
                     Spans::from(vec![
+                        Span::raw("50th %ile loss: "),
+                        // fixme: calc 50th %ile loss and save it separately
+                        // instead of exponentiating the log-loss in ahistory
+                        Span::styled(format!("{:+12e}", a_history[a_history.len() - 1].1.exp()), Style::default().add_modifier(Modifier::BOLD))
+                    ]),
+
+                    Spans::from(vec![
+                        Span::raw("time since last best: "),
+                        Span::styled(format!("{:8.1}s", time_since_last_best), Style::default().add_modifier(Modifier::BOLD))
+                    ]),
+    
+                    Spans::from(vec![
                         Span::styled("vibes: ", Style::default()),
-                        Span::styled("sleepy", Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled("thoughtful", Style::default().add_modifier(Modifier::BOLD))
                     ]),
                     
                     Spans::from(vec![
