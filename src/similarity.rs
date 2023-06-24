@@ -2,26 +2,35 @@ use realfft::{RealToComplex};
 pub type Spectrogram = Vec<Vec<f32>>;
 
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
+    let n_bands = inp.len().next_power_of_two();
     let mut spectrums = vec![];
+
     let mut indata = r2c.make_input_vec();
 
+
+    let mut spectrum = r2c.make_output_vec();
+
     for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 3) {
+        let mut spectrum_binned = vec![0.0; n_bands];
+
         for (i, (x, z)) in indata.iter_mut().zip(inp_chunk.iter()).enumerate() {
             // hann window
             let window = ((i as f32 / inp_chunk.len() as f32) * std::f32::consts::PI).sin().powi(2);
             *x = *z as f32 * window;
         }
 
-
-        let mut spectrum = r2c.make_output_vec();
         r2c.process(&mut indata, &mut spectrum).unwrap();
 
         let power_spec = spectrum
-            .into_iter()
-            .map(|complex| complex.norm_sqr())
-            .collect();
+            .iter()
+            .map(|complex| complex.norm_sqr());
         
-        spectrums.push(power_spec);
+        for (bin, power) in power_spec.enumerate() {
+            let band = bin.next_power_of_two().trailing_zeros();
+            spectrum_binned[band as usize] += power;
+        }
+
+        spectrums.push(spectrum_binned);
     }
 
     spectrums
