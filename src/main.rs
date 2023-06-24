@@ -1,16 +1,21 @@
 use animal::{genoasm, Animal};
 use tui::{widgets::{Dataset, Chart, Block, GraphType, Axis, Paragraph, Wrap, Borders, Gauge}, symbols, style::{Style, Color, Modifier}, text::{Span, Spans}, layout::{Alignment, Layout, Direction, Constraint}};
-use rand::{distributions::Uniform, Rng};
+use rand::Rng;
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
 
 use tracing::{debug};
+
+use util::normalize_audio;
+
+use crate::{similarity::{spectral_fitness, compute_spectrogram, compare_spectrograms}, util::mix_audio, animal::{genoasm::Genoasm, AnimalInfo}};
 
 pub mod animal;
 pub mod corrupt;
 pub mod ecosystem;
 pub mod similarity;
 pub mod util;
+pub mod vm;
 
 use clap::Parser;
 
@@ -24,6 +29,11 @@ struct Args {
     /// Output file path
     #[arg(short, long)]
     output: String,
+
+    /// Best output file path
+    #[arg(short, long)]
+    best_output: Option<String>,
+
 
     /// Number of Eves (spontaneously generated individuals)
     #[arg(short, long, default_value_t = 3)]
@@ -58,10 +68,6 @@ struct Args {
     #[arg(short, long, default_value_t = 0.2)]
     explore: f64,
 }
-
-use util::normalize_audio;
-
-use crate::{similarity::{spectral_fitness, compute_spectrogram, compare_spectrograms}, util::mix_audio, animal::{genoasm::Genoasm, AnimalInfo}};
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
     let (v, _) = gen.feed(&[0x1; 1024]);
@@ -123,12 +129,11 @@ fn main() -> color_eyre::Result<()> {
 
     let mut rng = rand::thread_rng();
 
-    let noise: Vec<i16> = (&mut rng)
-        .sample_iter(Uniform::from(i16::MIN..i16::MAX))
-        .take(seed.len())
-        .collect();
+    let noisy_seed: Vec<i16> = seed.iter().cloned()
+        .map(|x| if rng.gen_bool(0.08) { x } else { 0 })
+        .collect::<Vec<i16>>();
 
-    let noisy_seed = mix_audio(&seed, &noise, 0.33);
+    //lt noisy_seed = mix_audio(&seed, &noise, 0.1);
     let noisy_seed = normalize_audio(&noisy_seed);
 
     let mut eve;
@@ -160,17 +165,35 @@ fn main() -> color_eyre::Result<()> {
         let spec = compute_spectrogram(&aud, &*r2c);
         let f = spectral_fitness(&aud, &seed, &*r2c) * (gas as f64);
         let info = AnimalInfo {
-            fitness: f,
+            cost: f,
             spectrogram: spec,
             audio: aud
         };
         garbo.push((eve.clone(), info));
     }
 
+    // do this up here i guess too
+    garbo.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+    let mut best_cost = garbo[0].1.cost;
+
     let mut f_history = vec![];
     let mut a_history = vec![];
+
+    let mut best_writer = args.best_output.as_ref()
+        .map(|filename| hound::WavWriter::create(filename, spec).unwrap());
+
     for i in 0..args.generations {
-        if i % 256 == 0 {
+        if garbo[0].1.cost < best_cost {
+            best_cost = garbo[0].1.cost;
+
+            if let Some(bw) = best_writer.as_mut() {
+                for s in &garbo[0].1.audio {
+                    bw.write_sample(*s)?;
+                }
+                bw.flush()?;
+            }
+        }
+        if i % 128 == 0 {
             let mut writer = hound::WavWriter::create(&args.output, spec).unwrap();
 
             for (_, info) in &garbo {
@@ -185,8 +208,8 @@ fn main() -> color_eyre::Result<()> {
 
         while garbo.len() > args.population_size {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
-            let q = 6;
-            let death = rng.gen_range(garbo.len() * q / 16..garbo.len() * 15/16);
+            let q = 8;
+            let death = rng.gen_range(garbo.len() * q / 16..garbo.len() * 31/32);
             garbo.remove(death);
         }
         while garbo.len() < args.population_size {
@@ -194,12 +217,10 @@ fn main() -> color_eyre::Result<()> {
                 let (eve, eve_info) = &garbo[rng.gen_range(0..garbo.len())];
                 let (adam, adam_info)= &garbo[rng.gen_range(0..garbo.len())];
 
-                let aud: Vec<i16> = mix_audio(&eve_info.audio, &adam_info.audio, 0.333);
-                
                 if rng.gen_bool(0.2) {
                     (eve_info, eve.mutate())
                 } else {
-                    (eve_info, eve.befriend(adam).mutate())
+                    (adam_info, eve.befriend(adam).mutate())
                 }
             };
             if !screen(&gen) {
@@ -211,7 +232,7 @@ fn main() -> color_eyre::Result<()> {
 
             if sim > args.parent_child_diff {
                 let f = compare_spectrograms(&spec, &seed_spec) * gas as f64;
-                let info = AnimalInfo { fitness: f, audio: aud, spectrogram:  spec };
+                let info = AnimalInfo { cost: f, audio: aud, spectrogram:  spec };
                 garbo.push((gen, info));
                 debug!("Population size: {:?}", garbo.len());
             }
@@ -219,12 +240,12 @@ fn main() -> color_eyre::Result<()> {
 
         debug!("Generation {:?}", i);
 
-        let news = (0..512)
+        let news = (0..64)
             .into_par_iter()
             .filter_map(|_| {
                 let mut rng = rand::thread_rng();
 
-                let (gen, parent_info) = {
+                let (gen, parent_info, parent_audio) = {
                     let mut v;
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
@@ -244,31 +265,30 @@ fn main() -> color_eyre::Result<()> {
                         }
                         break;
                     }
-                    let (adam, adam_info) = v;
-
-                    let aud: Vec<i16> =
-                        eve_info.audio.iter().zip(adam_info.audio.iter()).map(|(&a, &b)| a + b).collect();
+                    let (_adam, adam_info) = v;
 
                     let gen = eve.mutate();
-                    (gen, eve_info)
+                    (gen, eve_info, &mix_audio(&eve_info.audio, &adam_info.audio, 0.5))
                 };
 
                 if !screen(&gen) {
                     return None; // screening failed, not viable
                 }
 
-                let (aud, gas) = gen.feed(&parent_info.audio);
+                let (aud, gas) = gen.feed(parent_audio);
     
+                //gotta do this here because we mix
+                let parent_spec = compute_spectrogram(parent_audio, &*r2c);
                 let spec = compute_spectrogram(&aud, &*r2c);
 
-                let sim = compare_spectrograms(&spec, &parent_info.spectrogram);
-                if sim > args.parent_child_diff {
-                    let f = compare_spectrograms(&spec, &seed_spec) * (gas as f64);
-                    let info = AnimalInfo {
-                        fitness: f,
-                        audio: aud,
-                        spectrogram: spec
-                    };
+                let sim = compare_spectrograms(&spec, &parent_spec);
+                let f = compare_spectrograms(&spec, &seed_spec) * (gas as f64);
+                let info = AnimalInfo {
+                    cost: f,
+                    audio: aud,
+                    spectrogram: spec
+                };
+                if sim > args.parent_child_diff || f < parent_info.cost {
                     Some((gen, info))
                 } else {
                     None
@@ -276,9 +296,9 @@ fn main() -> color_eyre::Result<()> {
             })
             .collect::<Vec<_>>();
 
-        let cutoff = garbo[garbo.len() - 1].1.fitness;
+        let cutoff = garbo[garbo.len() - 1].1.cost;
         for (gen, info) in news {
-            if info.fitness >= cutoff && rng.gen_bool(0.995) {
+            if info.cost >= cutoff && rng.gen_bool(0.995) {
                 continue;
             }
 
@@ -289,17 +309,17 @@ fn main() -> color_eyre::Result<()> {
 
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
-        garbo.sort_unstable_by(|a, b| a.1.fitness.partial_cmp(&b.1.fitness).unwrap());
+        garbo.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
         garbo.dedup_by(|a, b| {
             // cache this. what are you Doing. FREEPERF
             let sim = compare_spectrograms(&a.1.spectrogram, &b.1.spectrogram);
             sim <= args.parent_child_diff
         }); 
-        f_history.push((i as f64, garbo[0].1.fitness.ln()));
+        f_history.push((i as f64, garbo[0].1.cost.ln()));
         // i don't think we need this is_finite anymore, spectral similarity used to occasionally let a lil' +/-inf slip through
         // which screwed up averages forever
 
-        let avg = (garbo.iter().map(|x| x.1.fitness).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
+        let avg = (garbo.iter().map(|x| x.1.cost).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
         a_history.push((i as f64, avg.ln()));
 
         let datasets = vec![
@@ -322,7 +342,7 @@ fn main() -> color_eyre::Result<()> {
             .x_axis(Axis::default()
                 .title(Span::styled("Generation", Style::default().fg(Color::LightRed)))
                 .style(Style::default().fg(Color::White))
-                .bounds([0.0, args.generations as f64]))
+                .bounds([0.0, i as f64]))
             .y_axis(Axis::default()
                 .title(Span::styled("Loss", Style::default().fg(Color::LightRed)))
                 .style(Style::default().fg(Color::White))
@@ -366,7 +386,7 @@ fn main() -> color_eyre::Result<()> {
                     Spans::from(Span::raw(format!("gen {}/{}", i, args.generations))),
                     Spans::from(vec![
                         Span::raw("best loss: "),
-                        Span::styled(format!("{:16}", garbo[0].1.fitness), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:16}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
                     ]),
     
                     Spans::from(vec![
@@ -392,7 +412,8 @@ fn main() -> color_eyre::Result<()> {
             f.render_widget(para2, chunks_bar[1]);
         })?;
     }
-
+    
+    if let Some(bw) = best_writer { bw.finalize()?; }
 
     Ok(())
 }

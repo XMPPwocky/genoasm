@@ -8,7 +8,7 @@ pub trait Animal {
 }
 
 pub struct AnimalInfo {
-    pub fitness: f64,
+    pub cost: f64,
     pub audio: Vec<i16>,
     pub spectrogram: Spectrogram,
 }

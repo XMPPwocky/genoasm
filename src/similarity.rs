@@ -1,16 +1,14 @@
 use realfft::{RealToComplex};
-use rustfft::num_complex::Complex;
-
 pub type Spectrogram = Vec<Vec<f32>>;
 
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
     let mut spectrums = vec![];
     let mut indata = r2c.make_input_vec();
 
-    for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 2) {
+    for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 3) {
         for (i, (x, z)) in indata.iter_mut().zip(inp_chunk.iter()).enumerate() {
-            // cos window
-            let window = ((i as f32 / inp_chunk.len() as f32) * std::f32::consts::PI).sin();
+            // hann window
+            let window = ((i as f32 / inp_chunk.len() as f32) * std::f32::consts::PI).sin().powi(2);
             *x = *z as f32 * window;
         }
 
@@ -18,12 +16,12 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
         let mut spectrum = r2c.make_output_vec();
         r2c.process(&mut indata, &mut spectrum).unwrap();
 
-
-        spectrums.push(
-            spectrum
+        let power_spec = spectrum
             .into_iter()
-            .map(|complex| complex.norm())
-            .collect());
+            .map(|complex| complex.norm_sqr())
+            .collect();
+        
+        spectrums.push(power_spec);
     }
 
     spectrums
@@ -34,10 +32,10 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
 
     for (a, b) in a.iter().zip(b.iter()) {
         for (i, (&l, &r)) in a.iter().zip(b.iter()).enumerate() {
-            let pos = (i as f64) / (a.len() as f64);
-            let scale = 1.0 - pos;
+            //let pos = (i as f64) / (a.len() as f64);
+            let scale = 1.0; //(1.0 - pos);
 
-            let diff = (l - r).abs();
+            let diff = l - r;
             out += diff.abs() as f64 * scale;
         }
     }
