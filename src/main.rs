@@ -86,6 +86,10 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
     if v2.iter().filter(|x| **x != 0).count() < 64 {
         return false;
     }
+    let (v3, _) = gen.feed(&[0x1; 1024], Some(&[0x2; 1024]));
+    if v == v3 {
+        return false;
+    }
     /*et v3 = gen.feed(&[0x13; 1024]);
     if v3 == v2 { return false; }*/
     true

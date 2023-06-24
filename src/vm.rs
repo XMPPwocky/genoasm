@@ -118,14 +118,9 @@ impl VmState {
                     // then "fallthru" to jmp :3
                 }
 
-                if insn.get_operand_imm8(0) & 0x1 == 0 {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(insn.get_operand_imm16(1))
-                        .wrapping_sub(1);
-                } else {
-                    self.pc = insn.get_operand_imm16(1);
-                }
+                self.pc = self
+                    .pc
+                    .wrapping_add(insn.get_operand_imm16(1));
             }
             SkipIf => {
                 let a = insn.get_operand_imm8(0);
