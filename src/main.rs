@@ -361,13 +361,17 @@ fn main() -> color_eyre::Result<()> {
 
             let chunks_bar = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(5+2), Constraint::Min(0)].as_ref())
+                .constraints([Constraint::Length(6+2), Constraint::Min(0)].as_ref())
                 .split(chunks[1]);
 
             let text = vec![
                 Spans::from(vec![
                     Span::styled("geno", Style::default().fg(Color::LightBlue)),
                     Span::styled("ASM", Style::default().fg(Color::Green))
+                ]),
+                Spans::from(vec![
+                    Span::styled("ver: 0.0-", Style::default()),
+                    Span::styled("GHOST_CATCHER", Style::default().fg(Color::LightYellow).add_modifier(Modifier::ITALIC)),
                 ]),
                 Spans::from(vec![
                     Span::styled("another bad ", Style::default()),
