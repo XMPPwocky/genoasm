@@ -319,7 +319,8 @@ fn main() -> color_eyre::Result<()> {
         // i don't think we need this is_finite anymore, spectral similarity used to occasionally let a lil' +/-inf slip through
         // which screwed up averages forever
 
-        let avg = (garbo.iter().map(|x| x.1.cost).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
+        // secretly upper 50th %ile now :U
+        let avg = (garbo.iter().map(|x| x.1.cost).take(garbo.len()/2).filter(|x| x.is_finite()).sum::<f64>()) / garbo.len() as f64;
         a_history.push((i as f64, avg.ln()));
 
         let datasets = vec![
