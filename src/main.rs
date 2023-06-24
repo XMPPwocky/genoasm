@@ -398,7 +398,7 @@ fn main() -> color_eyre::Result<()> {
                     Spans::from(Span::raw(format!("gen {}/{}", i, args.generations))),
                     Spans::from(vec![
                         Span::raw("best loss: "),
-                        Span::styled(format!("{:16}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:+16e}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
                     ]),
     
                     Spans::from(vec![
