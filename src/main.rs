@@ -130,7 +130,7 @@ fn main() -> color_eyre::Result<()> {
     let mut rng = rand::thread_rng();
 
     let noisy_seed: Vec<i16> = seed.iter().cloned()
-        .map(|x| if rng.gen_bool(0.08) { x } else { 0 })
+        .map(|x| if rng.gen_bool(0.03) { x } else { 0 })
         .collect::<Vec<i16>>();
 
     //lt noisy_seed = mix_audio(&seed, &noise, 0.1);

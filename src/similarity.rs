@@ -36,7 +36,7 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
             let scale = 1.0; //(1.0 - pos);
 
             let diff = l - r;
-            out += diff.abs() as f64 * scale;
+            out += (diff as f64).powi(2) * scale;
         }
     }
     out
