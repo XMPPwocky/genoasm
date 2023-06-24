@@ -361,7 +361,7 @@ fn main() -> color_eyre::Result<()> {
 
             let chunks_bar = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(3+2), Constraint::Min(0)].as_ref())
+                .constraints([Constraint::Length(5+2), Constraint::Min(0)].as_ref())
                 .split(chunks[1]);
 
             let text = vec![
@@ -375,6 +375,13 @@ fn main() -> color_eyre::Result<()> {
                     Span::styled(" idea", Style::default()),
                 ]),
                 Spans::from(Span::styled("no copyright intended", Style::default().add_modifier(Modifier::ITALIC))),
+
+                Spans::from(vec![
+                    Span::styled("questions?", Style::default()),
+                ]),
+                Spans::from(vec![
+                    Span::styled("mimir@xmppwocky.net", Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)),
+                ]),
             ];
             let para1 = Paragraph::new(text)
                 .block(Block::default().title("ABOUT").borders(Borders::ALL))
