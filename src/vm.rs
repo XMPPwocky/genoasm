@@ -106,7 +106,7 @@ impl VmState {
         use Opcode::*;
 
         match opcode {
-            Nop => (),
+            Nop | Maximum => (),
 
             Jmp | Call => {
                 if opcode == Call {
@@ -229,19 +229,15 @@ impl VmState {
             }
 
             In => {
-                let sample = {
-                    //let idx = ( % NUM_REGISTERS) as usize;
-                    let idx = (insn.get_operand_imm8(0) % 2) as usize; // HACK for effiency lol
-                    let sample = self.aregs[idx][self.areg_playheads[idx]];
-                    self.advance_playhead(idx);
-                    sample
-                };
+                let idx = (insn.get_operand_imm8(0) % 4) as usize;  // HACK for effiency lol
+                let sample = self.aregs[idx][self.areg_playheads[idx]];
+                self.advance_playhead(idx);
                 self.set_reg(insn.get_operand_imm8(1), sample as u16);
             }
             Out => {
                 let sample = self.get_reg(insn.get_operand_imm8(1));
 
-                let idx = 2; // HACK, EFF //insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
+                let idx = (insn.get_operand_imm8(0) % 4) as usize; // HACK for efficiency
                 self.aregs[idx][self.areg_playheads[idx]] = sample as i16;
                 self.advance_playhead(idx);
 
@@ -252,7 +248,12 @@ impl VmState {
             Tell => {
                 let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
 
-                self.set_reg(insn.get_operand_imm8(1), self.areg_playheads[idx] as u16);
+                let pos = self.areg_playheads[idx];
+                let (hi, lo) = ((pos >> 16) as u16, pos as u16);
+        
+
+                self.set_reg(REG_ACCUMULATOR, hi);
+                self.set_reg(insn.get_operand_imm8(1), lo);
             }
             Seek => {
                 let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
@@ -275,7 +276,7 @@ impl VmState {
 
                 self.burn_gas(kernel_size as u64 / 2);
 
-                let kernel_idx = (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
+                let kernel_idx = 3; // always LUT tbh (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
                 let kernel = &self.aregs[kernel_idx];
 
                 let audio_idx = (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
@@ -348,13 +349,15 @@ pub enum Opcode {
     Seek, // Set AREG_A playhead to REG_B
 
     Filter, // set accumulator to the convolution of the next IMM8_A samples from AREG_B (at playhead) w/ next samples from AREG_C
+    
+    Maximum
 }
 
 #[derive(Debug, Copy, Clone)]
 pub struct Instruction(pub [u8; 4]);
 impl Instruction {
     pub fn get_opcode(&self) -> Option<Opcode> {
-        FromPrimitive::from_u8(self.0[0])
+        FromPrimitive::from_u8( (self.0[0]) % Opcode::Maximum as u8)
     }
 
     pub fn get_operand_imm8(&self, idx: u8) -> u8 {

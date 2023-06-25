@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use animal::{genoasm, Animal};
@@ -10,7 +11,7 @@ use tracing::{debug};
 
 use util::normalize_audio;
 
-use crate::{similarity::{spectral_fitness, compute_spectrogram, compare_spectrograms}, util::mix_audio, animal::{genoasm::Genoasm, AnimalInfo}};
+use crate::{similarity::{spectral_fitness, compute_spectrogram, compare_spectrograms}, animal::{genoasm::Genoasm, AnimalInfo}};
 
 pub mod animal;
 pub mod corrupt;
@@ -72,24 +73,16 @@ struct Args {
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
-    let (v, _) = gen.feed(&[0x1; 1024], None);
-    if v.iter().filter(|x| **x != 0).count() < 64 {
-        return false;
-    }
-    if (v[v.len() / 2..]).iter().filter(|x| **x != 0).count() < 32 {
-        return false;
-    }
-    let (v2, _) = gen.feed(&[0xAD; 1024], None);
+    let (v, v_gas) = gen.feed(&[0x42; 2048], Some(&[0x1; 2048]));
+    //if v_gas < 1024 { return false; }
+
+    if v.iter().filter(|&&x| x != 0).count() < 768 { return false; }
+
+    let (v2, _) = gen.feed(&[0x42; 2048], Some(&[0xAD; 2048]));
     if v == v2 {
         return false;
     }
-    if v2.iter().filter(|x| **x != 0).count() < 64 {
-        return false;
-    }
-    let (v3, _) = gen.feed(&[0x1; 1024], Some(&[0x2; 1024]));
-    if v == v3 {
-        return false;
-    }
+
     /*et v3 = gen.feed(&[0x13; 1024]);
     if v3 == v2 { return false; }*/
     true
@@ -98,12 +91,10 @@ fn main() -> color_eyre::Result<()> {
     tracing_subscriber::fmt::init();
 
     use std::io;
-    use termion::raw::IntoRawMode;
-    use tui::{backend::TermionBackend, Terminal};
+    let stdout = io::stdout();
+    let backend = tui::backend::CrosstermBackend::new(stdout);
 
-    let stdout = io::stdout().into_raw_mode()?;
-    let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = tui::Terminal::new(backend)?;
 
     let args = Args::parse();
 
@@ -132,16 +123,22 @@ fn main() -> color_eyre::Result<()> {
 
     let seed = normalize_audio(&seed?);
     let seed_spec = compute_spectrogram(&seed, &*r2c);
+    let seed_info = AnimalInfo { cost: 0.0, audio: seed.clone(), spectrogram: seed_spec.clone(),
+        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0) };
 
     let mut rng = rand::thread_rng();
 
     let noisy_seed: Vec<i16> = seed.iter().cloned()
-        //.map(|x| if rng.gen_bool(0.03) { x } else { 0 })
-        .map(|_| 0)
+        .map(|x| if rng.gen_bool(0.15) { x } else { 0 })
+        //.map(|_| 0)
         .collect::<Vec<i16>>();
 
-    //lt noisy_seed = mix_audio(&seed, &noise, 0.1);
+
+    //let noisy_seed = mix_audio(&seed, &noise, 0.1);
     let noisy_seed = normalize_audio(&noisy_seed);
+    let noisy_seed_info = AnimalInfo { cost: 0.0, audio: noisy_seed.clone(), spectrogram: compute_spectrogram(&noisy_seed, &*r2c),
+        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0) };
+
 
     let mut eve;
     debug!("Generating Eve(s)");
@@ -174,7 +171,8 @@ fn main() -> color_eyre::Result<()> {
         let info = AnimalInfo {
             cost: f,
             spectrogram: spec,
-            audio: aud
+            audio: aud,
+            wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
         };
         garbo.push((eve.clone(), info));
     }
@@ -202,7 +200,7 @@ fn main() -> color_eyre::Result<()> {
                 bw.flush()?;
             }
         }
-        if i % 128 == 0 {
+        /*if i % 256 == 0 {
             let mut writer = hound::WavWriter::create(&args.output, spec).unwrap();
 
             for (_, info) in &garbo {
@@ -212,13 +210,21 @@ fn main() -> color_eyre::Result<()> {
             }
         
             writer.finalize().unwrap();        
-        }
+        }*/
+
+
+        let cutoff = garbo[garbo.len() - 1].1.cost;
 
 
         while garbo.len() > args.population_size {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
-            let q = rng.gen_range(7..15); // yes, max 14, not off by one. see 15/16 max below
-            let death = rng.gen_range(garbo.len() * q / 16..garbo.len() * 15/16);
+            let mut death;
+            loop {
+                let q = rng.gen_range(1..16);
+                death = rng.gen_range(garbo.len() * q / 16..garbo.len());
+                if rng.gen_bool((1.0 - garbo[death].1.win_rate()).powi(1)*0.99 + 0.01) { break }
+                
+            }
             garbo.remove(death);
         }
         while garbo.len() < args.population_size {
@@ -226,7 +232,9 @@ fn main() -> color_eyre::Result<()> {
                 let (eve, eve_info) = &garbo[rng.gen_range(0..garbo.len())];
                 let (adam, adam_info)= &garbo[rng.gen_range(0..garbo.len())];
 
-                if rng.gen_bool(0.3) {
+                if rng.gen_bool(0.25) {
+                    (eve_info, &noisy_seed_info, eve.mutate())
+                } else if rng.gen_bool(0.25) {
                     (eve_info, eve_info, eve.mutate())
                 } else {
                     (eve_info, adam_info, eve.befriend(adam).mutate())
@@ -237,11 +245,12 @@ fn main() -> color_eyre::Result<()> {
             }
             let (aud, gas) = gen.feed(&par_info.audio, Some(&par2_info.audio));
             let spec = compute_spectrogram(&aud, &*r2c);
-            let sim = compare_spectrograms(&spec, &par_info.spectrogram);
+            let sim = compare_spectrograms(&spec, &par_info.spectrogram)
+                .min(compare_spectrograms(&spec, &par2_info.spectrogram));
 
             if sim > args.parent_child_diff {
                 let f = compare_spectrograms(&spec, &seed_spec) * gas as f64;
-                let info = AnimalInfo { cost: f, audio: aud, spectrogram:  spec };
+                let info = AnimalInfo { cost: f, audio: aud, spectrogram:  spec, wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)};
                 garbo.push((gen, info));
                 debug!("Population size: {:?}", garbo.len());
             }
@@ -249,7 +258,7 @@ fn main() -> color_eyre::Result<()> {
 
         debug!("Generation {:?}", i);
 
-        let news = (0..64)
+        let news = (0..128)
             .into_par_iter()
             .filter_map(|_| {
                 let mut rng = rand::thread_rng();
@@ -259,30 +268,38 @@ fn main() -> color_eyre::Result<()> {
                     loop {
                         let idx = rng.gen_range(0..garbo.len());
                         v = &garbo[idx];
-                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)) {
+                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
                             continue;
                         }
                         break;
                     }
 
                     let (eve, eve_info) = v;
-                    if rng.gen_bool(0.005) { // favor best candidate a lot for adam
+                    if rng.gen_bool(0.01) { // favor best candidate for adam
                         v = &garbo[0];
                     } else {
                         loop {
                             let idx = rng.gen_range(0..garbo.len());
                             v = &garbo[idx];
-                            if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)) {
+                            if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
                                 continue;
                             }
                             break;
                         }
                     }
-                    let (_adam, adam_info) = v;
 
-                    let gen = eve.mutate();
-                    (gen, eve_info, adam_info)
+                    let (_adam,  adam_info) = v;
+                    let mut adam_info = adam_info;
+
+                    if rng.gen_bool(0.25) {
+                        adam_info = &noisy_seed_info;
+                    }
+
+                    (eve.mutate(), eve_info, adam_info)
                 };
+
+                par_info.trials.fetch_add(1, Ordering::SeqCst);
+                //par2_info.trials.fetch_add(1, Ordering::SeqCst);
 
                 if !screen(&gen) {
                     return None; // screening failed, not viable
@@ -292,14 +309,18 @@ fn main() -> color_eyre::Result<()> {
     
                 let spec = compute_spectrogram(&aud, &*r2c);
 
-                let sim = compare_spectrograms(&spec, &par_info.spectrogram);
+                let sim = compare_spectrograms(&spec, &par_info.spectrogram)
+                    .min(compare_spectrograms(&spec, &par2_info.spectrogram)); 
                 let f = compare_spectrograms(&spec, &seed_spec) * (gas as f64);
                 let info = AnimalInfo {
                     cost: f,
                     audio: aud,
-                    spectrogram: spec
+                    spectrogram: spec,
+                    wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
                 };
-                if sim > args.parent_child_diff {
+                if sim > args.parent_child_diff && f < cutoff {
+                    par_info.wins.fetch_add(1, Ordering::SeqCst);
+                    //par2_info.wins.fetch_add(1, Ordering::SeqCst);
                     Some((gen, info))
                 } else {
                     None
@@ -307,12 +328,8 @@ fn main() -> color_eyre::Result<()> {
             })
             .collect::<Vec<_>>();
 
-        let cutoff = garbo[garbo.len() - 1].1.cost;
-        for (gen, info) in news {
-            if info.cost >= cutoff && rng.gen_bool(0.999) {
-                continue;
-            }
 
+        for (gen, info) in news {
             // horrible wasteful augh
             // do insertion sort lol
             garbo.push((gen, info));
@@ -321,11 +338,11 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         garbo.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-        garbo.dedup_by(|a, b| {
+        /*garbo.dedup_by(|a, b| {
             // cache this. what are you Doing. FREEPERF
             let sim = compare_spectrograms(&a.1.spectrogram, &b.1.spectrogram);
             sim <= args.parent_child_diff
-        }); 
+        }); */
         f_history.push((i as f64, garbo[0].1.cost.ln()));
         // i don't think we need this is_finite anymore, spectral similarity used to occasionally let a lil' +/-inf slip through
         // which screwed up averages forever
@@ -349,7 +366,7 @@ fn main() -> color_eyre::Result<()> {
                 .data(&f_history),
         ];
         let annoying_max = f_history[0].1;
-        let chart = Chart::new(datasets)
+        let chart_loss = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(Axis::default()
                 .title(Span::styled("Generation", Style::default().fg(Color::LightRed)))
@@ -359,6 +376,29 @@ fn main() -> color_eyre::Result<()> {
                 .title(Span::styled("Loss", Style::default().fg(Color::LightRed)))
                 .style(Style::default().fg(Color::White))
                 .bounds([f_history[f_history.len() - 1].1, annoying_max]));
+
+
+                let data = garbo.iter().enumerate().map(|(i, x)| (i as f64, x.1.win_rate())).collect::<Vec<_>>();
+                let datasets = vec![
+                    Dataset::default()
+                        .name("log winrate")
+                        .marker(symbols::Marker::Braille)
+                        .graph_type(GraphType::Line)
+                        .style(Style::default().fg(Color::LightCyan))
+                        .data(&data)
+                ];
+                let chart_winrate = Chart::new(datasets)
+                    .block(Block::default().title("WINRATE").borders(Borders::ALL))
+                    .x_axis(Axis::default()
+                        .title(Span::styled("Rank", Style::default().fg(Color::LightRed)))
+                        .style(Style::default().fg(Color::White))
+                        .bounds([0.0, garbo.len() as f64]))
+                    .y_axis(Axis::default()
+                        .title(Span::styled("Winrate", Style::default().fg(Color::LightRed)))
+                        .style(Style::default().fg(Color::White))
+                        .bounds([0.0, 1.0]));
+        
+
 
         terminal.clear()?;
         // inexcusable to just have this ,, sitting here in the main loop lmao
@@ -378,14 +418,20 @@ fn main() -> color_eyre::Result<()> {
                 .constraints([Constraint::Length(6+2), Constraint::Min(0)].as_ref())
                 .split(chunks[1]);
 
+            let chunks_graph = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)].as_ref())
+                .split(chunks[0]);
+
+
             let text = vec![
                 Spans::from(vec![
                     Span::styled("geno", Style::default().fg(Color::LightBlue)),
                     Span::styled("ASM", Style::default().fg(Color::Green))
                 ]),
                 Spans::from(vec![
-                    Span::styled("ver: 0.1-", Style::default()),
-                    Span::styled("GHOST_CATCHER", Style::default().fg(Color::LightYellow).add_modifier(Modifier::ITALIC)),
+                    Span::styled("ver: 0.2-", Style::default()),
+                    Span::styled("SHATTERHAND", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::ITALIC)),
                 ]),
                 Spans::from(vec![
                     Span::styled("another bad ", Style::default()),
@@ -407,33 +453,39 @@ fn main() -> color_eyre::Result<()> {
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: true });
 
-            
+
+                let label_style = Style::default().fg(Color::Gray);
                 let text = vec![
+                    Spans::from(vec![
+                        Span::styled("mode: ", label_style),
+                        Span::styled("mimic", Style::default().add_modifier(Modifier::BOLD))
+                    ]),
+
                     Spans::from(Span::raw(format!("gen {}/{}", i, args.generations))),
                     Spans::from(vec![
-                        Span::raw("best loss: "),
-                        Span::styled(format!("{:+12e}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled("best loss: ", label_style),
+                        Span::styled(format!("{:+6e}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
                     ]),
     
                     Spans::from(vec![
-                        Span::raw("50th %ile loss: "),
+                        Span::styled("50th %ile loss: ", label_style),
                         // fixme: calc 50th %ile loss and save it separately
                         // instead of exponentiating the log-loss in ahistory
-                        Span::styled(format!("{:+12e}", a_history[a_history.len() - 1].1.exp()), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:+6e}", a_history[a_history.len() - 1].1.exp()), Style::default().add_modifier(Modifier::BOLD))
                     ]),
 
                     Spans::from(vec![
-                        Span::raw("time since last best: "),
+                        Span::styled("time since last best: ", label_style),
                         Span::styled(format!("{:8.1}s", time_since_last_best), Style::default().add_modifier(Modifier::BOLD))
                     ]),
     
                     Spans::from(vec![
-                        Span::styled("vibes: ", Style::default()),
-                        Span::styled("thoughtful", Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled("vibes: ", label_style),
+                        Span::styled("persistent", Style::default().add_modifier(Modifier::BOLD))
                     ]),
                     
                     Spans::from(vec![
-                        Span::raw("num threads: "),
+                        Span::styled("num threads: ", label_style),
                         Span::styled(format!("{}", rayon::current_num_threads()), Style::default().add_modifier(Modifier::BOLD))
                     ])
     
@@ -445,7 +497,8 @@ fn main() -> color_eyre::Result<()> {
                     .wrap(Wrap { trim: true });
     
                 
-            f.render_widget(chart, chunks[0]);
+            f.render_widget(chart_loss, chunks_graph[0]);
+            f.render_widget(chart_winrate, chunks_graph[1]);
             f.render_widget(para1, chunks_bar[0]);
             f.render_widget(para2, chunks_bar[1]);
         })?;

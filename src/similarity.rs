@@ -48,11 +48,11 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
 
     for (a, b) in a.iter().zip(b.iter()) {
         for (i, (&l, &r)) in a.iter().zip(b.iter()).enumerate() {
-            //let pos = (i as f64) / (a.len() as f64);
-            let scale = 1.0; // 1.0 - pos;
+            let pos = (i as f64) / (a.len() as f64);
+            let scale = 1.0 - pos;
 
-            let diff = l - r;
-            out += (diff as f64).powi(2) * scale;
+            let diff = (l - r).abs();
+            out += diff as f64 * scale / a.len() as f64;
         }
     }
     out / a.len() as f64

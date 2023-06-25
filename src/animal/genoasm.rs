@@ -17,29 +17,29 @@ impl Genoasm {
         aregs[2] = out_areg;
         aregs[3] = self.lut.to_vec();
         for areg in &mut aregs[4..] {
+            // this is nasty but easier than thinking about the zero-length case later :U
             areg.push(0);
         }
 
-        let gas_limit = 768 * audio.len() as u64;
+        let gas_limit = 384 * audio.len() as u64;
 
         let mut vm = VmState::new(aregs, gas_limit);
 
+        // all go
         let mut status = VmRunResult::Continue;
         while status == VmRunResult::Continue {
             status = vm.run_insn(&self.instructions[vm.pc as usize]);
         }
-        /*if status == VmRunResult::OutOfGas {
-            // penalize gas guzzlers - return 0... inefficient lol
-            return std::iter::repeat(0).take(audio.len()).collect();
-        }*/
-        let f = vm.aregs[2].clone(); // useless clone lol
+
+        let f = normalize_audio(&vm.aregs[2]); // useless clone lol
         (
-            normalize_audio(&f),
-            1 // 00 + (u64::BITS - (gas_limit - vm.gas_remaining()).leading_zeros()) as u64 // hack dont scale this here you doof
+            f,
+            1 // ((gas_limit - vm.gas_remaining()) as f64).ln() as u64 // hack dont scale this here you doof
         )
     }
 }
 
+const MAGICS: &[u8] = &[0u8, 1, 2, 3, 4, 0x7F, 0x80, 0xFF];
 impl Animal for Genoasm {
     fn spontaneous_generation() -> Self {
         let mut rng = rand::thread_rng();
@@ -47,18 +47,20 @@ impl Animal for Genoasm {
         for insn in &mut *instructions {
             insn.0[0] = rng.gen_range(0..=Opcode::Filter as u8);
             for q in &mut insn.0[1..] {
-                if rng.gen_bool(0.975) {
+                if rng.gen_bool(0.95) {
                     *q = rng.gen();
                 } else {
-                    let magics = [0u8, 1, 0x7F, 0x80, 0xFF];
-                    *q = magics[rng.gen_range(0..magics.len())];
+                    *q = MAGICS[rng.gen_range(0..MAGICS.len())];
                 }
             }
         }
 
         let mut lut = Box::new([0; LUT_SIZE]);
         for e in &mut *lut {
-            *e = 0; // i guess? maybe less prone to generating random noise
+            // if we felt like it,
+            // we could use sample_iter here
+            // which might be faster, somehow? or just a wrapper
+            *e = 0; // rng.gen();
         }
 
         Genoasm { instructions, lut }
@@ -66,19 +68,24 @@ impl Animal for Genoasm {
 
     fn befriend(&self, friend: &Self) -> Self {
         let mut rng = rand::thread_rng();
-
-        let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
-        let insn_end = insn_split_point + rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point);
         let lut_split_point = rng.gen_range(0..LUT_SIZE);
         let lut_end = lut_split_point + rng.gen_range(0..LUT_SIZE - lut_split_point);
 
-        
         let mut instructions = self.instructions.clone();
         let mut lut = self.lut.clone();
 
-        instructions[insn_split_point..insn_end].copy_from_slice(&friend.instructions[insn_split_point..insn_end]);
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
+        for _ in 0..8 {
+            let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
+            let insn_splice_len = rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(0..8);
+
+            let spin = rng.gen_range(0..NUM_INSTRUCTIONS);
+
+            for i in 0..insn_splice_len {
+                instructions[insn_split_point + i] = instructions[(insn_split_point + spin + i) % NUM_INSTRUCTIONS];
+            }
+        }
         Genoasm { instructions, lut }
     }
 
@@ -87,7 +94,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(9..=17)) {
+        for _ in 0..(1<<rng.gen_range(5..=16)) {
             match rng.gen_range(0..=2) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
@@ -98,13 +105,17 @@ impl Animal for Genoasm {
                 1 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(0..4);
-                    let new = rng.gen();
+                    let new = if rng.gen_bool(0.5) {
+                        rng.gen()
+                    } else {
+                        MAGICS[rng.gen_range(0..MAGICS.len())]
+                    };
                     ant.instructions[idx].0[offset] = new;
-                }
+                },
                 _ => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(0..4);
-                    let add = rng.gen_range(-16..=16);
+                    let add = rng.gen_range(-8..=8);
                     ant.instructions[idx].0[offset] =
                         ant.instructions[idx].0[offset].wrapping_add_signed(add);
                 }
@@ -121,7 +132,7 @@ impl Animal for Genoasm {
                 }
                 1 => {
                     let idx = rng.gen_range(0..LUT_SIZE);
-                    let add = rng.gen_range(-16..=16);
+                    let add = rng.gen_range(-1024..=1024);
                     ant.lut[idx] = ant.lut[idx].wrapping_add(add);
                 }
                 2 => {
