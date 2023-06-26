@@ -14,8 +14,9 @@ impl Genoasm {
         let mut aregs: [Vec<i16>; NUM_REGISTERS as usize] = Default::default();
         aregs[0] = audio.to_vec();
         aregs[1] = audio2.map(|aud2| aud2.to_vec()).unwrap_or_else(|| audio.to_vec());
-        aregs[2] = out_areg;
-        aregs[3] = self.lut.to_vec();
+        aregs[2] = self.lut.to_vec();
+        aregs[3] = out_areg;
+
         for areg in &mut aregs[4..] {
             // this is nasty but easier than thinking about the zero-length case later :U
             areg.push(0);
@@ -31,7 +32,7 @@ impl Genoasm {
             status = vm.run_insn(&self.instructions[vm.pc as usize]);
         }
 
-        let f = normalize_audio(&vm.aregs[2]); // useless clone lol
+        let f = normalize_audio(&vm.aregs[3]); // useless clone lol
         (
             f,
             1 // ((gas_limit - vm.gas_remaining()) as f64).ln() as u64 // hack dont scale this here you doof
@@ -47,7 +48,7 @@ impl Animal for Genoasm {
         for insn in &mut *instructions {
             insn.0[0] = rng.gen_range(0..=Opcode::Filter as u8);
             for q in &mut insn.0[1..] {
-                if rng.gen_bool(0.95) {
+                if rng.gen_bool(0.8) {
                     *q = rng.gen();
                 } else {
                     *q = MAGICS[rng.gen_range(0..MAGICS.len())];
@@ -76,9 +77,9 @@ impl Animal for Genoasm {
 
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
-        for _ in 0..8 {
+        for _ in 0..3 {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
-            let insn_splice_len = rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(0..8);
+            let insn_splice_len = rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(0..4);
 
             let spin = rng.gen_range(0..NUM_INSTRUCTIONS);
 
@@ -94,7 +95,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(5..=16)) {
+        for _ in 0..(1<<rng.gen_range(6..=16)) {
             match rng.gen_range(0..=2) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);

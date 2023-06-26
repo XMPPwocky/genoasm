@@ -1,7 +1,7 @@
 use realfft::{RealToComplex};
-pub type Spectrogram = Vec<Vec<f32>>;
+pub type Spectrogram = (usize, Vec<f32>);
 
-const BAND_LOG: f32 = 1.1;
+const BAND_LOG: f32 = 1.618;
 
 fn bin_to_band(bin: usize, base: f32) -> usize {
     let bin = bin as f32;
@@ -18,7 +18,9 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
     let mut spectrum = r2c.make_output_vec();
 
     for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 3) {
-        let mut spectrum_binned = vec![0.0; n_bands];
+        let spec_start = spectrums.len();
+        spectrums.extend(std::iter::repeat(0.0).take(n_bands));
+        let spectrum_binned = &mut spectrums[spec_start..];
 
         for (i, (x, z)) in indata.iter_mut().zip(inp_chunk.iter()).enumerate() {
             // hann window
@@ -36,26 +38,27 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
             let band = bin_to_band(bin, BAND_LOG);
             spectrum_binned[band] += power;
         }
-
-        spectrums.push(spectrum_binned);
     }
 
-    spectrums
+    (n_bands, spectrums)
 }
 
 pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
+    assert_eq!(a.0, b.0);
+    let n_bands = a.0;
+
     let mut out = 0.0;
 
-    for (a, b) in a.iter().zip(b.iter()) {
+    for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
         for (i, (&l, &r)) in a.iter().zip(b.iter()).enumerate() {
             let pos = (i as f64) / (a.len() as f64);
             let scale = 1.0 - pos;
 
-            let diff = (l - r).abs();
-            out += diff as f64 * scale / a.len() as f64;
+            let diff = (l - r).powi(2);
+            out += diff as f64 * scale;
         }
     }
-    out / a.len() as f64
+    out / (a.1.len() as f64)
 }
 pub fn spectral_fitness(candidate: &[i16], seed: &[i16], r2c: &dyn RealToComplex<f32>) -> f64 {
     assert_eq!(candidate.len(), seed.len());

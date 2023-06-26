@@ -73,12 +73,13 @@ struct Args {
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
-    let (v, v_gas) = gen.feed(&[0x42; 2048], Some(&[0x1; 2048]));
+    const SCREEN_LEN: usize = 4096;
+    let (v, _) = gen.feed(&[0x42; SCREEN_LEN], Some(&[0x1; SCREEN_LEN]));
     //if v_gas < 1024 { return false; }
 
-    if v.iter().filter(|&&x| x != 0).count() < 768 { return false; }
+    if v.iter().skip(SCREEN_LEN/2).filter(|&&x| x != 0).count() < 1500 { return false; }
 
-    let (v2, _) = gen.feed(&[0x42; 2048], Some(&[0xAD; 2048]));
+    let (v2, _) = gen.feed(&[0x42; SCREEN_LEN], Some(&[0x7734; SCREEN_LEN]));
     if v == v2 {
         return false;
     }
@@ -123,15 +124,16 @@ fn main() -> color_eyre::Result<()> {
 
     let seed = normalize_audio(&seed?);
     let seed_spec = compute_spectrogram(&seed, &*r2c);
-    let seed_info = AnimalInfo { cost: 0.0, audio: seed.clone(), spectrogram: seed_spec.clone(),
-        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0) };
 
     let mut rng = rand::thread_rng();
 
-    let noisy_seed: Vec<i16> = seed.iter().cloned()
-        .map(|x| if rng.gen_bool(0.15) { x } else { 0 })
-        //.map(|_| 0)
-        .collect::<Vec<i16>>();
+    let mut noisy_seed: Vec<i16> = Vec::with_capacity(seed.len());
+    //let mut j = seed[0];
+    for &m in &seed {
+        //if rng.gen_bool(0.0) { j = m; }
+        noisy_seed.push(rng.gen());
+    }
+
 
 
     //let noisy_seed = mix_audio(&seed, &noise, 0.1);
@@ -142,11 +144,14 @@ fn main() -> color_eyre::Result<()> {
 
     let mut eve;
     debug!("Generating Eve(s)");
+
+    terminal.clear()?;
+
     for i in 0..args.num_eves {
         debug!("{i}/{} Eves", args.num_eves);
 
 
-        terminal.clear()?;
+
         terminal.draw(|f| {
             let size = f.size();
 
@@ -185,19 +190,20 @@ fn main() -> color_eyre::Result<()> {
     let mut f_history = vec![];
     let mut a_history = vec![];
 
-    let mut best_writer = args.best_output.as_ref()
-        .map(|filename| hound::WavWriter::create(filename, spec).unwrap());
-
     for i in 0..args.generations {
         if garbo[0].1.cost < best_cost {
             best_cost = garbo[0].1.cost;
             last_best_time = Instant::now();
 
-            if let Some(bw) = best_writer.as_mut() {
+            if let Some(best_dir) = args.best_output.as_ref() {
+                let path = std::path::PathBuf::from(best_dir).join(format!("{}.wav", i));
+
+                let mut bw = hound::WavWriter::create(path, spec)?;
+
                 for s in &garbo[0].1.audio {
                     bw.write_sample(*s)?;
                 }
-                bw.flush()?;
+                bw.finalize()?;
             }
         }
         /*if i % 256 == 0 {
@@ -220,9 +226,9 @@ fn main() -> color_eyre::Result<()> {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
             let mut death;
             loop {
-                let q = rng.gen_range(1..16);
-                death = rng.gen_range(garbo.len() * q / 16..garbo.len());
-                if rng.gen_bool((1.0 - garbo[death].1.win_rate()).powi(1)*0.99 + 0.01) { break }
+                let q = rng.gen_range(54..64);
+                death = rng.gen_range(garbo.len() * q / 64..garbo.len());
+                if rng.gen_bool((1.0 - garbo[death].1.win_rate()).powi(3)*0.99 + 0.01) { break }
                 
             }
             garbo.remove(death);
@@ -233,7 +239,7 @@ fn main() -> color_eyre::Result<()> {
                 let (adam, adam_info)= &garbo[rng.gen_range(0..garbo.len())];
 
                 if rng.gen_bool(0.25) {
-                    (eve_info, &noisy_seed_info, eve.mutate())
+                    (eve_info, &noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
                 } else if rng.gen_bool(0.25) {
                     (eve_info, eve_info, eve.mutate())
                 } else {
@@ -275,6 +281,7 @@ fn main() -> color_eyre::Result<()> {
                     }
 
                     let (eve, eve_info) = v;
+
                     if rng.gen_bool(0.01) { // favor best candidate for adam
                         v = &garbo[0];
                     } else {
@@ -288,14 +295,17 @@ fn main() -> color_eyre::Result<()> {
                         }
                     }
 
-                    let (_adam,  adam_info) = v;
-                    let mut adam_info = adam_info;
+                    let (adam,  adam_info) = v;
 
-                    if rng.gen_bool(0.25) {
-                        adam_info = &noisy_seed_info;
-                    }
+                    let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
+                        (eve_info, &noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
+                    } else if rng.gen_bool(0.25) {
+                        (eve_info, eve_info, eve.mutate())
+                    } else {
+                        (eve_info, adam_info, eve.befriend(adam).mutate())
+                    };
 
-                    (eve.mutate(), eve_info, adam_info)
+                    (eve, eve_info, adam_info)
                 };
 
                 par_info.trials.fetch_add(1, Ordering::SeqCst);
@@ -338,17 +348,27 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         garbo.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-        /*garbo.dedup_by(|a, b| {
+        garbo.dedup_by(|a, b| {
             // cache this. what are you Doing. FREEPERF
             let sim = compare_spectrograms(&a.1.spectrogram, &b.1.spectrogram);
-            sim <= args.parent_child_diff
-        }); */
+            let same_bucket = sim <= args.parent_child_diff;
+            if same_bucket {
+                // b will die!
+                // add its stats to a's, so they may live on
+                // i think this will lose info still if there's more than 2 "same-bucket" things in garbo
+                // we shouldn't use dedup_by like this
+                // but it's better than nothing
+                a.1.trials.fetch_add(b.1.trials.load(Ordering::SeqCst), Ordering::SeqCst);
+                a.1.wins.fetch_add(b.1.wins.load(Ordering::SeqCst), Ordering::SeqCst);
+            }
+            same_bucket
+        });
         f_history.push((i as f64, garbo[0].1.cost.ln()));
         // i don't think we need this is_finite anymore, spectral similarity used to occasionally let a lil' +/-inf slip through
         // which screwed up averages forever
 
         // secretly upper 50th %ile now :U
-        let avg = (garbo.iter().map(|x| x.1.cost).take(garbo.len()/2).filter(|x| x.is_finite()).sum::<f64>()) / (garbo.len() / 2) as f64;
+        let avg = garbo[garbo.len() / 4].1.cost;
         a_history.push((i as f64, avg.ln()));
 
         let datasets = vec![
@@ -481,7 +501,7 @@ fn main() -> color_eyre::Result<()> {
     
                     Spans::from(vec![
                         Span::styled("vibes: ", label_style),
-                        Span::styled("persistent", Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled("ever-settling", Style::default().add_modifier(Modifier::BOLD))
                     ]),
                     
                     Spans::from(vec![
@@ -503,8 +523,6 @@ fn main() -> color_eyre::Result<()> {
             f.render_widget(para2, chunks_bar[1]);
         })?;
     }
-    
-    if let Some(bw) = best_writer { bw.finalize()?; }
 
     Ok(())
 }
