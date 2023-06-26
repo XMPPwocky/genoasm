@@ -21,10 +21,12 @@ impl AnimalInfo {
     pub fn win_rate(&self) -> f64 {
         let wins = self.wins.load(Ordering::SeqCst);
         let trials = self.trials.load(Ordering::SeqCst);
+        let prior = 0.1;
+
         let x = if trials == 0 {
-            1.0
+            prior
         } else {
-            (0.5 + (wins as f64 / trials as f64 / 2.0)).powf(trials as f64 / 32.0)
+            (prior + ((1.0 - prior) * wins as f64 / trials as f64 / 2.0)).powf(trials as f64 / 64.0)
         };
         (x * 0.995) + 0.005
     }

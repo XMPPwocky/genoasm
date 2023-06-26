@@ -274,7 +274,7 @@ impl VmState {
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
 
-                self.burn_gas(kernel_size as u64 / 2);
+                self.burn_gas(kernel_size as u64 / 4);
 
                 let kernel_idx = 3; // always LUT tbh (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
                 let kernel = &self.aregs[kernel_idx];

@@ -22,7 +22,7 @@ impl Genoasm {
             areg.push(0);
         }
 
-        let gas_limit = 384 * audio.len() as u64;
+        let gas_limit = 256 * audio.len() as u64;
 
         let mut vm = VmState::new(aregs, gas_limit);
 
@@ -77,9 +77,9 @@ impl Animal for Genoasm {
 
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
-        for _ in 0..3 {
+        for _ in 0..2 {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
-            let insn_splice_len = rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(0..4);
+            let insn_splice_len = rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(0..10);
 
             let spin = rng.gen_range(0..NUM_INSTRUCTIONS);
 
@@ -95,7 +95,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(6..=16)) {
+        for _ in 0..(1<<rng.gen_range(3..=12)) {
             match rng.gen_range(0..=2) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);

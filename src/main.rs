@@ -128,10 +128,16 @@ fn main() -> color_eyre::Result<()> {
     let mut rng = rand::thread_rng();
 
     let mut noisy_seed: Vec<i16> = Vec::with_capacity(seed.len());
-    //let mut j = seed[0];
-    for &m in &seed {
-        //if rng.gen_bool(0.0) { j = m; }
-        noisy_seed.push(rng.gen());
+    let mut j = seed[0];
+    for (i, &m) in seed.iter().enumerate() {
+        if rng.gen_bool(0.8) { j = m; }
+
+        if i % 8192 < 2048 {
+            noisy_seed.push(j);
+        } else {
+            noisy_seed.push(0);
+        }
+        //noisy_seed.push(rng.gen());
     }
 
 
@@ -220,7 +226,7 @@ fn main() -> color_eyre::Result<()> {
 
 
         let cutoff = garbo[garbo.len() - 1].1.cost;
-
+        let good_cutoff = garbo[garbo.len() / 4].1.cost;
 
         while garbo.len() > args.population_size {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
@@ -264,7 +270,7 @@ fn main() -> color_eyre::Result<()> {
 
         debug!("Generation {:?}", i);
 
-        let news = (0..128)
+        let news = (0..512)
             .into_par_iter()
             .filter_map(|_| {
                 let mut rng = rand::thread_rng();
@@ -282,7 +288,7 @@ fn main() -> color_eyre::Result<()> {
 
                     let (eve, eve_info) = v;
 
-                    if rng.gen_bool(0.01) { // favor best candidate for adam
+                    if rng.gen_bool(0.1) { // favor best candidate for adam
                         v = &garbo[0];
                     } else {
                         loop {
@@ -329,8 +335,10 @@ fn main() -> color_eyre::Result<()> {
                     wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
                 };
                 if sim > args.parent_child_diff && f < cutoff {
-                    par_info.wins.fetch_add(1, Ordering::SeqCst);
-                    //par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                    if f < good_cutoff {
+                        par_info.wins.fetch_add(1, Ordering::SeqCst);
+                        //par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                    }
                     Some((gen, info))
                 } else {
                     None
