@@ -3,7 +3,7 @@ pub type Spectrogram = (usize, Vec<f32>);
 
 //const BAND_LOG: f32 = 1.618;
 
-const NUM_BANDS: usize = 128;
+const NUM_BANDS: usize = 64;
 const SAMPLE_RATE: f32 = 44100.0;
 
 fn hz_to_mel(hz: f32) -> f32 {
@@ -17,6 +17,16 @@ fn bin_to_band(bin: usize, num_bins: usize) -> usize {
     let pos = mel_this_band / mel_max_band;
     
     (pos * NUM_BANDS as f32).floor() as usize
+}
+fn a_weight(hz: f32) -> f32 {
+    if hz < 1.0 { return 0.0; }
+    let ra = (12194.0f32.powi(2) * hz.powi(4))
+        / (
+            (hz.powi(2) + 20.68f32.powi(2)) 
+            * f32::sqrt((hz.powi(2) + 107.7f32.powi(2))*(hz.powi(2) + 737.9f32.powi(2)))
+            * (hz.powi(2) + 12194.0f32.powi(2)));
+
+        (20.0 * ra.log10() + 2.0)
 }
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
     let mut spectrums = vec![];
@@ -51,7 +61,8 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
         
         for (bin, power) in power_spec.enumerate() {
             let band = bin_to_band(bin, r2c.len());
-            spectrum_binned[band] += power / band_area[band];
+            let hz = (bin as f32 / r2c.len() as f32) * SAMPLE_RATE / 2.0;
+            spectrum_binned[band] += power * a_weight(hz) / band_area[band];
         }
     }
 
@@ -68,13 +79,8 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
     for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
         let mut chunk_score = 0.0;
         for (i, (&l, &r)) in a.iter().zip(b.iter()).enumerate() {
-            //// roll off sensitivity on higher bins as 1/f
-            let freq = i as f64 * 44100.0 / a.len() as f64; // FIXME : Hardcoded rate!
-            //let pos = (i as f64) / (a.len() as f64);
-            let scale = (1.0 + (freq / 700.0)).ln(); // mel-shaped
-
-            let diff = (l as f64 -  r as f64).abs(); //.powi(2);
-            chunk_score += diff * scale;
+            let diff = (l as f64 -  r as f64).abs();
+            chunk_score += diff;
         }
 
         out += chunk_score.powi(2);

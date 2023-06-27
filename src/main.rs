@@ -496,7 +496,7 @@ fn main() -> color_eyre::Result<()> {
                         
                     Spans::from(vec![
                         Span::styled("vibe alignment: ", label_style),
-                        Span::styled("aethereal", Style::default().add_modifier(Modifier::BOLD).fg(Color::Magenta))
+                        Span::styled("abyssal", Style::default().add_modifier(Modifier::BOLD).fg(Color::Blue))
                     ]),
     
                 ];
