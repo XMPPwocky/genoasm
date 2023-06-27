@@ -20,14 +20,24 @@ pub struct AnimalInfo {
 impl AnimalInfo {
     pub fn win_rate(&self) -> f64 {
         let wins = self.wins.load(Ordering::SeqCst);
-        let trials = self.trials.load(Ordering::SeqCst);
-        let prior = 0.1;
-
-        let x = if trials == 0 {
-            prior
-        } else {
-            (prior + ((1.0 - prior) * wins as f64 / trials as f64 / 2.0)).powf(trials as f64 / 64.0)
-        };
-        (x * 0.995) + 0.005
+        let trials = self.trials.load(Ordering::SeqCst).max(1);
+  
+        // wilson
+        let n = trials as f64;
+        let x = wins as f64 / n;
+        let z = 1.96f64;
+        (x + z.powi(2)/2.0) / (n + z.powi(2))
+    }
+}
+impl Clone for AnimalInfo {
+    fn clone(&self) -> Self {
+        AnimalInfo {
+            cost: self.cost,
+            audio: self.audio.clone(),
+            spectrogram: self.spectrogram.clone(),
+            
+            wins: AtomicUsize::new(self.wins.load(Ordering::SeqCst)),
+            trials: AtomicUsize::new(self.trials.load(Ordering::SeqCst))
+        }
     }
 }

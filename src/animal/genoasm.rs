@@ -1,4 +1,5 @@
 use rand::Rng;
+//use serde::{Deserialize, Serialize};
 
 use crate::{animal::Animal, util::normalize_audio, vm::*};
 
@@ -22,7 +23,7 @@ impl Genoasm {
             areg.push(0);
         }
 
-        let gas_limit = 256 * audio.len() as u64;
+        let gas_limit = 1024 * audio.len() as u64;
 
         let mut vm = VmState::new(aregs, gas_limit);
 
@@ -35,7 +36,7 @@ impl Genoasm {
         let f = normalize_audio(&vm.aregs[3]); // useless clone lol
         (
             f,
-            1 // ((gas_limit - vm.gas_remaining()) as f64).ln() as u64 // hack dont scale this here you doof
+            1 // 2048 + ((gas_limit - vm.gas_remaining()) as f64).ln() as u64 // hack dont scale this here you doof
         )
     }
 }
@@ -95,17 +96,18 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(3..=12)) {
-            match rng.gen_range(0..=2) {
+        for _ in 0..(1<<rng.gen_range(3..=16)) {
+            match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
-                    let offset = rng.gen_range(0..4);
+                    let offset = rng.gen_range(1..4);
                     let shift = rng.gen_range(0..8);
                     ant.instructions[idx].0[offset] ^= 1 << shift;
                 },
                 1 => {
+                    // randomize u8 or use magic
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
-                    let offset = rng.gen_range(0..4);
+                    let offset = rng.gen_range(1..4);
                     let new = if rng.gen_bool(0.5) {
                         rng.gen()
                     } else {
@@ -113,9 +115,15 @@ impl Animal for Genoasm {
                     };
                     ant.instructions[idx].0[offset] = new;
                 },
+                2 => {
+                    // randomize opcode
+                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS); 
+                    ant.instructions[idx].0[0] = rng.gen_range(0..=Opcode::Filter as u8);
+                }
                 _ => {
+                    // random operand add/sub
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
-                    let offset = rng.gen_range(0..4);
+                    let offset = rng.gen_range(1..4);
                     let add = rng.gen_range(-8..=8);
                     ant.instructions[idx].0[offset] =
                         ant.instructions[idx].0[offset].wrapping_add_signed(add);

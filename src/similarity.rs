@@ -13,6 +13,12 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
 
     let mut spectrums = vec![];
 
+    // keep track of the area of each band
+    let mut band_area = vec![0.0; n_bands];
+    for i in 0..inp.len() {
+        band_area[bin_to_band(i, BAND_LOG)] += 1.0;
+    }
+
     let mut indata = r2c.make_input_vec();
 
     let mut spectrum = r2c.make_output_vec();
@@ -36,7 +42,7 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
         
         for (bin, power) in power_spec.enumerate() {
             let band = bin_to_band(bin, BAND_LOG);
-            spectrum_binned[band] += power;
+            spectrum_binned[band] += power / band_area[band];
         }
     }
 
@@ -49,14 +55,19 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
 
     let mut out = 0.0;
 
-    for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
-        for (i, (&l, &r)) in a.iter().zip(b.iter()).enumerate() {
-            //let pos = (i as f64) / (a.len() as f64);
-            let scale = 1.0; // - pos
 
-            let diff = (l - r).abs();
-            out += diff as f64 * scale;
+    for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
+        let mut chunk_score = 0.0;
+        for (i, (&l, &r)) in a.iter().zip(b.iter()).enumerate() {
+            // roll off sensitivity on higher bins as 1/f
+            let pos = (i as f64) / (a.len() as f64);
+            let scale = 1.0 - pos;
+
+            let diff = (l as f64 -  r as f64).powi(2);
+            chunk_score += diff * scale;
         }
+
+        out += chunk_score.powi(2);
     }
     out / (a.1.len() as f64)
 }

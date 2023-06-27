@@ -1,6 +1,7 @@
 use num_traits::FromPrimitive;
 
 use num_derive::FromPrimitive;
+use serde::{Deserialize, Serialize};
 
 pub const NUM_REGISTERS: u8 = 16;
 
@@ -12,7 +13,7 @@ pub const AREG_REFERENCE: u8 = 0;
 pub const AREG_LUT: u8 = 1;
 
 pub const NUM_INSTRUCTIONS: usize = 65536;
-pub const LUT_SIZE: usize = 2048;
+pub const LUT_SIZE: usize = 4096;
 pub const STACK_SIZE: usize = 256;
 
 
@@ -353,7 +354,7 @@ pub enum Opcode {
     Maximum
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 pub struct Instruction(pub [u8; 4]);
 impl Instruction {
     pub fn get_opcode(&self) -> Option<Opcode> {
