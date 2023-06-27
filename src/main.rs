@@ -255,15 +255,19 @@ fn main() -> color_eyre::Result<()> {
                         let mut rng = rand::thread_rng();
                             let (gen, par_info, par2_info) = {
                                 let mut v;
-                                loop {
-                                    let idx = rng.gen_range(0..garbo.len());
-                                    v = &garbo[idx];
-                                    if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
-                                        continue;
+                                if rng.gen_bool(0.2) {
+                                    // use an all-star
+                                    v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
+                                } else {
+                                    loop {
+                                        let idx = rng.gen_range(0..garbo.len());
+                                        v = &garbo[idx];
+                                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
+                                            continue;
+                                        }
+                                        break;
                                     }
-                                    break;
                                 }
-
                                 let (eve, eve_info) = v;
 
                                 if rng.gen_bool(0.2) {
