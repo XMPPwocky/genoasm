@@ -23,7 +23,7 @@ impl Genoasm {
             areg.push(0);
         }
 
-        let gas_limit = 1024 * audio.len() as u64;
+        let gas_limit = 96 * audio.len() as u64;
 
         let mut vm = VmState::new(aregs, gas_limit);
 

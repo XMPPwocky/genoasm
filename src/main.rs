@@ -255,7 +255,7 @@ fn main() -> color_eyre::Result<()> {
                         let mut rng = rand::thread_rng();
                             let (gen, par_info, par2_info) = {
                                 let mut v;
-                                if rng.gen_bool(0.2) {
+                                if rng.gen_bool(0.125) {
                                     // use an all-star
                                     v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
                                 } else {
@@ -270,7 +270,7 @@ fn main() -> color_eyre::Result<()> {
                                 }
                                 let (eve, eve_info) = v;
 
-                                if rng.gen_bool(0.05) {
+                                if rng.gen_bool(0.2) {
                                     // use an all-star
                                     v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
                                 } else {
@@ -286,7 +286,7 @@ fn main() -> color_eyre::Result<()> {
 
                                 let (adam,  adam_info) = v;
 
-                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
+                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.05) {
                                     (eve_info, noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
                                 } else if rng.gen_bool(0.25) {
                                     (eve_info, adam_info, eve.mutate())
@@ -370,15 +370,15 @@ fn main() -> color_eyre::Result<()> {
                 .style(Style::default().fg(Color::Cyan))
                 .data(&f_history),
         ];
-        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(1024)];
+        let (annoying_gen, annoying_max) = a_history[a_history.len().saturating_sub(8192)];
         let chart_loss = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(Axis::default()
-                .title(Span::styled("Generation", Style::default().fg(Color::LightRed)))
+                .title(Span::styled("Generation", Style::default().fg(Color::Magenta)))
                 .style(Style::default().fg(Color::White))
                 .bounds([annoying_gen as f64, i as f64]))
             .y_axis(Axis::default()
-                .title(Span::styled("Loss", Style::default().fg(Color::LightRed)))
+                .title(Span::styled("Loss", Style::default().fg(Color::Magenta)))
                 .style(Style::default().fg(Color::White))
                 .bounds([f_history[f_history.len() - 1].1, annoying_max]));
 
