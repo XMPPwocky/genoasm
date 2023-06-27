@@ -222,21 +222,21 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-
-        let cutoff = garbo[garbo.len() * 2 / 3].1.cost;
-        let good_cutoff = garbo[garbo.len() / 8].1.cost;
-
         while garbo.len() > args.population_size {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
             let mut death;
             loop {
                 let q = rng.gen_range(48..64);
                 death = rng.gen_range(garbo.len() * q / 64..garbo.len());
-                if rng.gen_bool((1.0 - garbo[death].1.win_rate()).powi(2)*0.99 + 0.01) { break }
+                if rng.gen_bool((1.0 - garbo[death].1.win_rate())*0.99 + 0.01) { break }
                 
             }
             garbo.remove(death);
         }
+
+        let cutoff = garbo[garbo.len() * 2 / 3].1.cost;
+        let good_cutoff = garbo[garbo.len() / 4].1.cost;
+
 
         debug!("Generation {:?}", i);
 
@@ -270,7 +270,7 @@ fn main() -> color_eyre::Result<()> {
                                 }
                                 let (eve, eve_info) = v;
 
-                                if rng.gen_bool(0.2) {
+                                if rng.gen_bool(0.05) {
                                     // use an all-star
                                     v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
                                 } else {
@@ -289,8 +289,9 @@ fn main() -> color_eyre::Result<()> {
                                 let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
                                     (eve_info, noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
                                 } else if rng.gen_bool(0.25) {
-                                    (eve_info, eve_info, eve.mutate())
-                                } else {
+                                    (eve_info, adam_info, eve.mutate())
+                                } 
+                                else {
                                     (eve_info, adam_info, eve.befriend(adam).mutate())
                                 };
 
