@@ -478,8 +478,8 @@ fn main() -> color_eyre::Result<()> {
                     Span::styled("ASM", Style::default().fg(Color::Green))
                 ]),
                 Spans::from(vec![
-                    Span::styled("ver: 0.6-", Style::default()),
-                    Span::styled("CODON", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::ITALIC)),
+                    Span::styled("ver: 0.7-", Style::default()),
+                    Span::styled("HEPTAPOD", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::ITALIC)),
                 ]),
                 Spans::from(vec![
                     Span::styled("another bad ", Style::default()),
