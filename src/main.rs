@@ -10,7 +10,9 @@ use realfft::RealFftPlanner;
 use std::sync::atomic::Ordering::SeqCst;
 
 use tracing::{debug};
-const TABOO_LEN: usize = 768;
+const TABOO_LEN: usize = 256;
+
+const SAMPLE_RATE: f32 = 11025.0; // 44100.0;
 
 use util::normalize_audio;
 
@@ -88,6 +90,8 @@ struct Stats {
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
+    return true; // HACK
+
     const SCREEN_LEN: usize = 4096;
     let (v, _) = gen.feed(&[0x42; SCREEN_LEN], Some(&[0x1; SCREEN_LEN]));
     //if v_gas < 1024 { return false; }
@@ -116,7 +120,7 @@ fn main() -> color_eyre::Result<()> {
 
     let spec = hound::WavSpec {
         channels: 1,
-        sample_rate: 44100,
+        sample_rate: SAMPLE_RATE as u32,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
@@ -232,8 +236,8 @@ fn main() -> color_eyre::Result<()> {
             }
             all_stars.push_back(population[0].clone());
 
-            if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
-            taboo.push_front(population[0].1.spectrogram.clone());
+            //if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
+            //taboo.push_front(population[0].1.spectrogram.clone());
 
             if let Some(best_dir) = args.best_output.as_ref() {
                 let path = std::path::PathBuf::from(best_dir).join(format!("{}.wav", i));
@@ -258,8 +262,10 @@ fn main() -> color_eyre::Result<()> {
             }
 
             let (_, info) = population.remove(death);
-            //if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
-            //taboo.push_front(info.spectrogram);
+            // displace a graveyard
+            if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
+            taboo.push_front(info.spectrogram);
+            
         }
 
 
@@ -316,7 +322,7 @@ fn main() -> color_eyre::Result<()> {
 
                                 let (adam,  adam_info) = v;
 
-                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
+                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.01) {
                                     (eve_info, noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
                                 } else {
                                     (eve_info, adam_info, eve.befriend(adam).mutate())
@@ -334,9 +340,9 @@ fn main() -> color_eyre::Result<()> {
                                 return;
                             }
 
-                            let audio_parent = &population[rng.gen_range(0..population.len()/good_div)].1.audio;
+                            //let audio_parent = &population[rng.gen_range(0..population.len()/good_div)].1.audio;
 
-                            let (aud, gas) = gen.feed(audio_parent, Some(&par2_info.audio));
+                            let (aud, gas) = gen.feed(&noisy_seed_info.audio, None); // audio_parent, Some(&par2_info.audio));
                 
                             let spec = compute_spectrogram(&aud, r2c);
 
@@ -359,7 +365,8 @@ fn main() -> color_eyre::Result<()> {
                                     .min_by(|x, y| x.partial_cmp(y).unwrap())
                                     .unwrap_or(std::f64::INFINITY);
                     
-                                if taboo_sim > args.taboo_similarity {
+                                // are we more similar to anything tabooed than our parents?
+                                if taboo_sim > sim {
                                     m_tx.send((gen, info)).unwrap();
                                 } else {
                                     stats.taboo_rejects_count.fetch_add(1, SeqCst);
