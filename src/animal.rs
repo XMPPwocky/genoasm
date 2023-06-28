@@ -25,8 +25,10 @@ impl AnimalInfo {
         // wilson
         let n = trials as f64;
         let x = wins as f64 / n;
-        let z = 3.0f64; //1.96f64;
-        (x + z.powi(2)/2.0) / (n + z.powi(2))
+        let z = 1.96f64;
+        //(x + z.powi(2)/2.0) / (n + z.powi(2))
+        // modified- prior = p=0.1. no idea if this is sound, probably not lmao
+        (x + z.powi(2)/5.0) / (n + z.powi(2))
     }
 }
 impl Clone for AnimalInfo {

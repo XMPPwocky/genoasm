@@ -22,11 +22,11 @@ fn a_weight(hz: f32) -> f32 {
     if hz < 1.0 { return 0.0; }
     let ra = (12194.0f32.powi(2) * hz.powi(4))
         / (
-            (hz.powi(2) + 20.68f32.powi(2)) 
+            (hz.powi(2) + 20.6f32.powi(2)) 
             * f32::sqrt((hz.powi(2) + 107.7f32.powi(2))*(hz.powi(2) + 737.9f32.powi(2)))
             * (hz.powi(2) + 12194.0f32.powi(2)));
 
-        (20.0 * ra.log10() + 2.0)
+    ra // (20.0 * ra.log10() + 2.0)
 }
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
     let mut spectrums = vec![];
@@ -78,9 +78,9 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
 
     for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
         let mut chunk_score = 0.0;
-        for (i, (&l, &r)) in a.iter().zip(b.iter()).enumerate() {
-            let diff = (l as f64 -  r as f64).abs();
-            chunk_score += diff;
+        for (&l, &r) in a.iter().zip(b.iter()) {
+            let diff = l as f64 -  r as f64;
+            chunk_score += diff.powi(2);
         }
 
         out += chunk_score.powi(2);

@@ -7,8 +7,10 @@ use tui::{widgets::{Dataset, Chart, Block, GraphType, Axis, Paragraph, Wrap, Bor
 use rand::{Rng, seq::IteratorRandom};
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
+use std::sync::atomic::Ordering::SeqCst;
 
 use tracing::{debug};
+const TABOO_LEN: usize = 768;
 
 use util::normalize_audio;
 
@@ -71,6 +73,18 @@ struct Args {
     /// rejection sampling
     #[arg(short, long, default_value_t = 0.2)]
     explore: f64,
+
+    #[arg(short, long, default_value_t = 1e19)]
+    taboo_similarity: f64,
+
+    #[arg(short, long, default_value_t = 0.01)]
+    taboo_pop_odds: f64,
+}
+
+struct Stats {
+    trials_count: AtomicUsize,
+
+    taboo_rejects_count: AtomicUsize
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
@@ -107,7 +121,13 @@ fn main() -> color_eyre::Result<()> {
         sample_format: hound::SampleFormat::Int,
     };
 
-    let mut garbo: Vec<(Genoasm, AnimalInfo)> = vec![];
+    let mut population: Vec<(Genoasm, AnimalInfo)> = vec![];
+    let mut taboo = VecDeque::with_capacity(TABOO_LEN);
+
+    let stats = Stats {
+        trials_count: AtomicUsize::new(0),
+        taboo_rejects_count: AtomicUsize::new(0)
+    };
 
     let seed: Result<Vec<i16>, _> = {
         let mut reader = hound::WavReader::open(args.input)?;
@@ -137,7 +157,7 @@ fn main() -> color_eyre::Result<()> {
        //if i % 22050 < 8192 {
         //    noisy_seed.push(j);
         //} else {
-            noisy_seed.push(0);
+            noisy_seed.push(rng.gen());
 //}
         ////noisy_seed.push(rng.gen());
     }
@@ -185,11 +205,11 @@ fn main() -> color_eyre::Result<()> {
             audio: aud,
             wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
         };
-        garbo.push((eve.clone(), info));
+        population.push((eve.clone(), info));
     }
 
     // do this up here i guess too
-    garbo.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+    population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
     let mut best_cost = std::f64::INFINITY;
     let mut last_best_time = Instant::now();
@@ -201,68 +221,78 @@ fn main() -> color_eyre::Result<()> {
     let mut a_history = vec![];
 
     for i in 0..args.generations {
-        if garbo[0].1.cost < best_cost {
-            best_cost = garbo[0].1.cost;
+        taboo.retain(|x| !rng.gen_bool(args.taboo_pop_odds));
+
+        if population[0].1.cost < best_cost {
+            best_cost = population[0].1.cost;
             last_best_time = Instant::now();
 
             if all_stars.len() == NUM_ALL_STARS {
                 all_stars.pop_front();
             }
-            all_stars.push_back(garbo[0].clone());
+            all_stars.push_back(population[0].clone());
+
+            if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
+            taboo.push_front(population[0].1.spectrogram.clone());
 
             if let Some(best_dir) = args.best_output.as_ref() {
                 let path = std::path::PathBuf::from(best_dir).join(format!("{}.wav", i));
 
                 let mut bw = hound::WavWriter::create(path, spec)?;
 
-                for s in &garbo[0].1.audio {
+                for s in &population[0].1.audio {
                     bw.write_sample(*s)?;
                 }
                 bw.finalize()?;
             }
         }
 
-        while garbo.len() > args.population_size {
+        while population.len() > args.population_size {
             // free perf: use retain or whatever to not do an O(n) operation in a loop
             let mut death;
             loop {
                 let q = rng.gen_range(48..64);
-                death = rng.gen_range(garbo.len() * q / 64..garbo.len());
-                if rng.gen_bool((1.0 - garbo[death].1.win_rate())*0.99 + 0.01) { break }
+                death = rng.gen_range(population.len() * q / 64..population.len());
+                if rng.gen_bool((1.0 - population[death].1.win_rate())*0.99 + 0.01) { break }
                 
             }
-            garbo.remove(death);
+
+            let (_, info) = population.remove(death);
+            //if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
+            //taboo.push_front(info.spectrogram);
         }
 
-        let cutoff = garbo[garbo.len() * 2 / 3].1.cost;
-        let good_cutoff = garbo[garbo.len() / 4].1.cost;
 
+        let cutoff = population[population.len() * 3/4].1.cost;
+        let good_div = 2;
 
         debug!("Generation {:?}", i);
 
         let (tx, rx) = std::sync::mpsc::channel();
         {
-            let garbo = &garbo;
+            let population = &population;
             let noisy_seed_info = &noisy_seed_info;
             let r2c = &*r2c;
             let all_stars = &all_stars;
             let seed_spec = &seed_spec;
+            let taboo = &taboo;
+            let stats = &stats;
             rayon::scope(move |s| {
-                for _ in 0..512 {
+                for _ in 0..128 {
                     let m_tx = tx.clone();
         
                     s.spawn(move |_| {
                         let mut rng = rand::thread_rng();
                             let (gen, par_info, par2_info) = {
                                 let mut v;
-                                if rng.gen_bool(0.125) {
+                                if rng.gen_bool(0.25) {
                                     // use an all-star
                                     v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
                                 } else {
                                     loop {
-                                        let idx = rng.gen_range(0..garbo.len());
-                                        v = &garbo[idx];
-                                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
+                                        let idx = rng.gen_range(0..population.len());
+                                        v = &population[idx];
+                                        if rng.gen_bool((idx as f64 / (population.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
                                             continue;
                                         }
                                         break;
@@ -270,14 +300,14 @@ fn main() -> color_eyre::Result<()> {
                                 }
                                 let (eve, eve_info) = v;
 
-                                if rng.gen_bool(0.2) {
+                                if rng.gen_bool(0.1) {
                                     // use an all-star
                                     v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
                                 } else {
                                     loop {
-                                        let idx = rng.gen_range(0..garbo.len());
-                                        v = &garbo[idx];
-                                        if rng.gen_bool((idx as f64 / (garbo.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
+                                        let idx = rng.gen_range(0..population.len());
+                                        v = &population[idx];
+                                        if rng.gen_bool((idx as f64 / (population.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
                                             continue;
                                         }
                                         break;
@@ -286,26 +316,27 @@ fn main() -> color_eyre::Result<()> {
 
                                 let (adam,  adam_info) = v;
 
-                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.05) {
+                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
                                     (eve_info, noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
-                                } else if rng.gen_bool(0.25) {
-                                    (eve_info, adam_info, eve.mutate())
-                                } 
-                                else {
+                                } else {
                                     (eve_info, adam_info, eve.befriend(adam).mutate())
                                 };
 
                                 (eve, eve_info, adam_info)
                             };
 
+                            stats.trials_count.fetch_add(1, SeqCst);
+                            
                             par_info.trials.fetch_add(1, Ordering::SeqCst);
-                            //par2_info.trials.fetch_add(1, Ordering::SeqCst);
+                            par2_info.trials.fetch_add(1, Ordering::SeqCst);
 
                             if !screen(&gen) {
                                 return;
                             }
 
-                            let (aud, gas) = gen.feed(&garbo[0].1.audio, Some(&par2_info.audio));
+                            let audio_parent = &population[rng.gen_range(0..population.len()/good_div)].1.audio;
+
+                            let (aud, gas) = gen.feed(audio_parent, Some(&par2_info.audio));
                 
                             let spec = compute_spectrogram(&aud, r2c);
 
@@ -319,23 +350,35 @@ fn main() -> color_eyre::Result<()> {
                                 wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
                             };
                             if sim > args.parent_child_diff && f < cutoff {
-                                if f < good_cutoff {
-                                    par_info.wins.fetch_add(1, Ordering::SeqCst);
-                                    //par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                                // regardless of taboo, credit parent(s)
+                                par_info.wins.fetch_add(1, Ordering::SeqCst);
+                                par2_info.wins.fetch_add(1, Ordering::SeqCst);
+
+                                let taboo_sim = taboo.iter()
+                                    .map(|x| compare_spectrograms(&info.spectrogram, x))
+                                    .min_by(|x, y| x.partial_cmp(y).unwrap())
+                                    .unwrap_or(std::f64::INFINITY);
+                    
+                                if taboo_sim > args.taboo_similarity {
+                                    m_tx.send((gen, info)).unwrap();
+                                } else {
+                                    stats.taboo_rejects_count.fetch_add(1, SeqCst);
                                 }
-                                m_tx.send((gen, info)).unwrap();
                             }
                     })
                 }
             });
         }
 
-        garbo.extend(rx.iter());
+        for (animal, info) in rx.iter() {
+            // check for taboo
+            population.push((animal, info));
+        }
 
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
-        garbo.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-        garbo.dedup_by(|a, b| {
+        population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+        /*population.dedup_by(|a, b| {
             // cache this. what are you Doing. FREEPERF
             let sim = compare_spectrograms(&a.1.spectrogram, &b.1.spectrogram);
             let same_bucket = sim <= args.parent_child_diff;
@@ -349,11 +392,11 @@ fn main() -> color_eyre::Result<()> {
                 a.1.wins.fetch_add(b.1.wins.load(Ordering::SeqCst), Ordering::SeqCst);
             }
             same_bucket
-        });
-        f_history.push((i as f64, garbo[0].1.cost.ln()));
+        });*/
+        f_history.push((i as f64, population[0].1.cost.ln()));
 
         // secretly upper 25th %ile now :U
-        let avg = garbo[garbo.len() / 4].1.cost;
+        let avg = population[population.len() / 4].1.cost;
         a_history.push((i as f64, avg.ln()));
 
         let datasets = vec![
@@ -383,7 +426,7 @@ fn main() -> color_eyre::Result<()> {
                 .bounds([f_history[f_history.len() - 1].1, annoying_max]));
 
 
-                let data = garbo.iter().enumerate().map(|(i, x)| (i as f64, x.1.win_rate())).collect::<Vec<_>>();
+                let data = population.iter().enumerate().map(|(i, x)| (i as f64, x.1.win_rate())).collect::<Vec<_>>();
                 let datasets = vec![
                     Dataset::default()
                         .name("log winrate")
@@ -397,7 +440,7 @@ fn main() -> color_eyre::Result<()> {
                     .x_axis(Axis::default()
                         .title(Span::styled("Rank", Style::default().fg(Color::LightRed)))
                         .style(Style::default().fg(Color::White))
-                        .bounds([0.0, garbo.len() as f64]))
+                        .bounds([0.0, population.len() as f64]))
                     .y_axis(Axis::default()
                         .title(Span::styled("Winrate", Style::default().fg(Color::LightRed)))
                         .style(Style::default().fg(Color::White))
@@ -415,7 +458,7 @@ fn main() -> color_eyre::Result<()> {
     
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(0), Constraint::Percentage(20)].as_ref())
+                .constraints([Constraint::Min(0), Constraint::Percentage(33)].as_ref())
                 .split(size);
 
             let chunks_bar = Layout::default()
@@ -435,8 +478,8 @@ fn main() -> color_eyre::Result<()> {
                     Span::styled("ASM", Style::default().fg(Color::Green))
                 ]),
                 Spans::from(vec![
-                    Span::styled("ver: 0.5-", Style::default()),
-                    Span::styled("HOMEOBOX", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::ITALIC)),
+                    Span::styled("ver: 0.6-", Style::default()),
+                    Span::styled("CODON", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::ITALIC)),
                 ]),
                 Spans::from(vec![
                     Span::styled("another bad ", Style::default()),
@@ -469,31 +512,47 @@ fn main() -> color_eyre::Result<()> {
                     Spans::from(Span::raw(format!("gen. {}/{}", i, args.generations))),
                     Spans::from(vec![
                         Span::styled("least unfit: ", label_style),
-                        Span::styled(format!("{:+6e}", garbo[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:1.8e}", population[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
                     ]),
     
                     Spans::from(vec![
                         Span::styled("25th %ile unfit: ", label_style),
                         // fixme: calc 50th %ile loss and save it separately
                         // instead of exponentiating the log-loss in ahistory
-                        Span::styled(format!("{:+6e}", a_history[a_history.len() - 1].1.exp()), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:1.8e}", a_history[a_history.len() - 1].1.exp()), Style::default().add_modifier(Modifier::BOLD))
                     ]),
 
                     Spans::from(vec![
                         Span::styled("time since last best: ", label_style),
-                        Span::styled(format!("{:8.1}s", time_since_last_best), Style::default().add_modifier(Modifier::BOLD))
+                        Span::styled(format!("{:6.1}s", time_since_last_best), Style::default().add_modifier(Modifier::BOLD))
                     ]),
 
-                    Spans::from(vec![
-                        Span::styled("num. animals: ", label_style),
-                        Span::styled(format!("{}", garbo.len()), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-                    
                     Spans::from(vec![
                         Span::styled("num. threads: ", label_style),
                         Span::styled(format!("{}", rayon::current_num_threads()), Style::default().add_modifier(Modifier::BOLD))
                     ]),
+
+                    Spans::from(vec![
+                        Span::styled("num. trials: ", label_style),
+                        Span::styled(format!("{}", stats.trials_count.load(SeqCst)), Style::default().add_modifier(Modifier::BOLD))
+                    ]),
+
+                    Spans::from(vec![
+                        Span::styled("num. animals: ", label_style),
+                        Span::styled(format!("{}", population.len()), Style::default().add_modifier(Modifier::BOLD))
+                    ]),
+
+                    Spans::from(vec![
+                        Span::styled("num. taboos: ", label_style),
+                        Span::styled(format!("{}", taboo.len()), Style::default().add_modifier(Modifier::BOLD))
+                    ]),
                         
+
+                    Spans::from(vec![
+                        Span::styled("taboo rejects: ", label_style),
+                        Span::styled(format!("{}", stats.taboo_rejects_count.load(SeqCst)), Style::default().add_modifier(Modifier::BOLD))
+                    ]),
+
                     Spans::from(vec![
                         Span::styled("vibe alignment: ", label_style),
                         Span::styled("abyssal", Style::default().add_modifier(Modifier::BOLD).fg(Color::Blue))

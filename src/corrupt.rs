@@ -7,6 +7,6 @@ pub struct IntegerMutateParams<T> {
     pub add_range: Range<T>,
 }
 
-pub fn mutate_u8(rng: &mut StdRng, x: &mut u8, params: &IntegerMutateParams<u8>) {
+/*pub fn mutate_u8(rng: &mut StdRng, x: &mut u8, params: &IntegerMutateParams<u8>) {
     todo!()
-}
+}*/

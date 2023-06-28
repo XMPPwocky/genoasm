@@ -96,7 +96,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(3..=16)) {
+        for _ in 0..(1<<rng.gen_range(4..=13)) {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
@@ -136,7 +136,7 @@ impl Animal for Genoasm {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..LUT_SIZE);
-                    let shift = rng.gen_range(0..8);
+                    let shift = rng.gen_range(0..16);
                     ant.lut[idx] ^= 1 << shift;
                 }
                 1 => {
