@@ -374,8 +374,17 @@ pub enum Opcode {
     Maximum
 }
 
-#[derive(Debug, Copy, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 pub struct Instruction(pub [u8; 4]);
+impl PartialEq for Instruction {
+    fn eq(&self, other: &Self) -> bool {
+        match self.get_opcode() {
+            // die and nop take no args, so just cmp opcode
+            Some(Opcode::Die | Opcode::Nop) => (self.get_opcode() == other.get_opcode()),
+            _ => self.0 == other.0
+        }
+    }
+}
 
 impl Instruction {
     pub fn write(&self, writer: &mut impl Write, addr: u16) -> io::Result<()> {
@@ -418,5 +427,11 @@ impl Instruction {
     pub fn get_operand_imm16(&self, idx: u8) -> u16 {
         let idx = idx as usize;
         u16::from_le_bytes(self.0[idx + 1..idx + 3].try_into().expect("infallible..."))
+    }
+    pub fn set_operand_imm16(&mut self, idx: u8, val: u16) {
+        let i = idx as usize;
+        let k: &mut [u8] = &mut self.0[i + 1..i + 3];
+        k.copy_from_slice(&u16::to_le_bytes(val));
+        assert_eq!(self.get_operand_imm16(idx), val);
     }
 }

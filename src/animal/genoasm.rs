@@ -15,7 +15,7 @@ pub struct Genoasm {
     pub lut: Box<[i16; LUT_SIZE]>,
 }
 impl Genoasm {
-    pub fn feed(&self, audio: &[i16], audio2: Option<&[i16]>) -> (Vec<i16>, f64) {
+    pub fn feed(&self, audio: &[i16], audio2: Option<&[i16]>, gas_limit: u64) -> (Vec<i16>, u64) {
         let out_areg: Vec<i16> = std::iter::repeat(0).take(audio.len()).collect();
 
         let mut aregs: [Vec<i16>; NUM_REGISTERS as usize] = Default::default();
@@ -29,8 +29,6 @@ impl Genoasm {
             areg.push(0);
         }
 
-        let gas_limit = 128 * audio.len() as u64;
-
         let mut vm = VmState::new(aregs, gas_limit);
 
         // all go
@@ -42,56 +40,107 @@ impl Genoasm {
         let f = normalize_audio(&vm.aregs[3]); // useless clone lol
         (
             f,
-            1.0 // 1024.0 +  ((gas_limit - vm.gas_remaining() + 1) as f64).ln() // hack dont scale this here you doof
+            gas_limit - vm.gas_remaining() // hack dont scale this here you doof
         )
     }
 
-    pub fn simplify(&mut self, expected: &[i16], in_audio: &[i16], in_audio2: Option<&[i16]>) {
+    pub fn simplify(&mut self, expected: &[i16], gas_limit: u64, in_audio: &[i16], in_audio2: Option<&[i16]>) {
         assert_eq!(expected.len(), in_audio.len());
+        
         let old_instructions = self.instructions.clone();
 
-        const SIMPLIFY_BLOCK: usize = 1;
+        
+        let mut block_size = 64;
 
-        for i in (0..self.instructions.len()).step_by(SIMPLIFY_BLOCK) {
-            for j in i..(i+SIMPLIFY_BLOCK).clamp(0, self.instructions.len()) {
-               self.instructions[j].0[0] = Opcode::Die as u8;
-            }
+        while block_size > 0 {
+            for i in (0..self.instructions.len()).step_by(block_size) {
+                let mut changed = false;
+                for j in i..(i+block_size).clamp(0, self.instructions.len()) {
+                    changed |= self.instructions[j].get_opcode() != Some(Opcode::Die);
+                    self.instructions[j].0[0] = Opcode::Die as u8;
+                }
+                if changed {
+                    let out = self.feed(in_audio, in_audio2, gas_limit).0;
 
-            let out = self.feed(in_audio, in_audio2).0;
+                    if out == expected {
+                        continue;
+                    }
+                }
 
-            if out == expected {
-                continue;
-            }
+                changed = false;
+                for j in i..(i+block_size).clamp(0, self.instructions.len()) {
+                    changed |= self.instructions[j].get_opcode() != Some(Opcode::Nop);
+                    self.instructions[j].0[0] = Opcode::Nop as u8;
+                }
+                let revert = if changed {
+                    let out = self.feed(in_audio, in_audio2, gas_limit).0;
+                    out != expected
+                } else {
+                    false
+                };
 
-            for j in i..(i+SIMPLIFY_BLOCK).clamp(0, self.instructions.len()) {
-                self.instructions[j].0[0] = Opcode::Nop as u8;
-            }
-
-            let out = self.feed(in_audio, in_audio2).0;
-
-            if out != expected {
-                for j in i..(i+SIMPLIFY_BLOCK).clamp(0, self.instructions.len()) {
-                    self.instructions[j].0[0] = old_instructions[j].0[0];
+                if revert {
+                    for j in i..(i+block_size).clamp(0, self.instructions.len()) {
+                        self.instructions[j].0[0] = old_instructions[j].0[0];
+                    }
                 }
             }
+
+            block_size /= 2;
         }
 
+        // unsled NOPs
         let mut streak = 0;
         for i in 0..self.instructions.len() {
             if self.instructions[i].0[0] == Opcode::Nop as u8 {
                 streak += 1;
             } else {
-                for j in 1..=streak {
+                for j in 0..streak {
                     let offset = j; // + 1;
 
-                    self.instructions[i - offset].0[0] = Opcode::Jmp as u8;
-                    self.instructions[i - offset].0[2] = (offset & 0xFF) as u8;
-                    self.instructions[i - offset].0[3] = (offset >> 8) as u8;
+                    self.instructions[i - offset - 1].0[0] = Opcode::Jmp as u8;
+                    self.instructions[i - offset - 1].0[2] = (offset & 0xFF) as u8;
+                    self.instructions[i - offset - 1].0[3] = (offset >> 8) as u8;
                 }
                 streak = 0;
             }
         }
+
+        // jump forwarding
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for i in 0..self.instructions.len() {
+                if self.instructions[i].get_opcode() == Some(Opcode::Jmp) {
+                    let offset = self.instructions[i].get_operand_imm16(1);
+                    let target = (i + offset as usize + 1) % NUM_INSTRUCTIONS;
+                    if target == i {
+                        // just die instead of infinite looping
+                        self.instructions[i].0[0] = Opcode::Die as u8; 
+                    }
+
+                    if self.instructions[target].get_opcode() == Some(Opcode::Jmp) {
+                        let d_offset = self.instructions[target].get_operand_imm16(1);
+                        let d_target = (target + d_offset as usize + 1) % NUM_INSTRUCTIONS;       
+
+                        let new_offset = (d_target.wrapping_sub(i + 1)) % NUM_INSTRUCTIONS;
+
+                        self.instructions[i].set_operand_imm16(1, new_offset as u16);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // double check safety
+        // HACK: try adn detect if original timed out here
+        if gas_limit < (in_audio.len() * 256) as u64 {
+            let out = self.feed(in_audio, in_audio2, gas_limit).0;
+            assert_eq!(&out, &expected);
+        }
     }
+
 }
 
 const MAGICS: &[u8] = &[0u8, 1, 2, 3, 4, 0x7F, 0x80, 0xFF];
@@ -131,7 +180,7 @@ impl Animal for Genoasm {
 
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
-        for _ in 0..20 {
+        for _ in 0..6 {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
             let insn_splice_len = rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(4..9);
 
@@ -149,7 +198,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(2..=8)) {
+        for _ in 0..(1<<rng.gen_range(2..=10)) {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);

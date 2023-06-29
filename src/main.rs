@@ -79,7 +79,7 @@ struct Args {
     explore: f64,
 
     #[arg(short, long, default_value_t = 1.0)]
-    taboo_similarity_scale: f64,
+    taboo_similarity: f64,
 
     #[arg(short, long, default_value_t = 0.01)]
     taboo_pop_odds: f64,
@@ -93,7 +93,7 @@ struct Stats {
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
     return true;
-    const SCREEN_LEN: usize = 512;
+    /*const SCREEN_LEN: usize = 512;
     let (v, _) = gen.feed(&[0x42; SCREEN_LEN], Some(&[0x1; SCREEN_LEN]));
     //if v_gas < 1024 { return false; }
 
@@ -106,7 +106,7 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
 
     /*et v3 = gen.feed(&[0x13; 1024]);
     if v3 == v2 { return false; }*/
-    true
+    true*/
 }
 fn main() -> color_eyre::Result<()> {
     tracing_subscriber::fmt::init();
@@ -171,13 +171,15 @@ fn main() -> color_eyre::Result<()> {
     //let noisy_seed = mix_audio(&seed, &noise, 0.1);
     let noisy_seed = normalize_audio(&noisy_seed);
     let noisy_seed_info = AnimalInfo { cost: 0.0, audio: noisy_seed.clone(), spectrogram: compute_spectrogram(&noisy_seed, &*r2c),
-        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0) };
+        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0), gas: 0 };
 
 
     let mut eve;
     debug!("Generating Eve(s)");
 
     terminal.clear()?;
+
+    let gas_limit = 256 * noisy_seed.len() as u64;
 
     for i in 0..args.num_eves {
         debug!("{i}/{} Eves", args.num_eves);
@@ -200,12 +202,13 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-        let (aud, gas) = eve.feed(&noisy_seed, None);
+        let (aud, gas) = eve.feed(&noisy_seed, None, gas_limit);
         let spec = compute_spectrogram(&aud, &*r2c);
-        let f = spectral_fitness(&aud, &seed, &*r2c) * (gas as f64);
+        let f = spectral_fitness(&aud, &seed, &*r2c);
         let info = AnimalInfo {
             cost: f,
             spectrogram: spec,
+            gas,
             audio: aud,
             wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
         };
@@ -247,7 +250,7 @@ fn main() -> color_eyre::Result<()> {
             {
                 let x = &mut population[0];
 
-                x.0.simplify(&x.1.audio, &noisy_seed, None);
+                x.0.simplify(&x.1.audio, x.1.gas, &noisy_seed, None);
             }
             best_cost = population[0].1.cost;
             last_best_time = Instant::now();
@@ -308,8 +311,11 @@ fn main() -> color_eyre::Result<()> {
             let taboo = &taboo;
             let stats = &stats;
             let noisy_seed = &noisy_seed;
+
+
+            let similarity_range = compare_spectrograms(&population[0].1.spectrogram, &population[population.len() / 2].1.spectrogram);
             rayon::scope(move |s| {
-                for _ in 0..128 {
+                for _ in 0..512 {
                     let m_tx = tx.clone();
         
                     s.spawn(move |_| {
@@ -367,16 +373,19 @@ fn main() -> color_eyre::Result<()> {
 
                             //let audio_parent = &population[0].1.audio;
 
-                            let (aud, gas) = gen.feed(&noisy_seed, None); //&audio_parent, Some(&par2_info.audio));
-                
+                            let (aud, gas) = gen.feed(&noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
+                            // silly hack....
+                            //if aud[aud.len() - 1] == 0 { return; }
+                            
                             let spec = compute_spectrogram(&aud, r2c);
 
                             let (sim1, sim2) = (compare_spectrograms(&spec, &par_info.spectrogram)
                                 ,compare_spectrograms(&spec, &par2_info.spectrogram)); 
 
-                            let f = compare_spectrograms(&spec, seed_spec) * (gas as f64);
+                            let f = compare_spectrograms(&spec, seed_spec);
                             let info = AnimalInfo {
                                 cost: f,
+                                gas,
                                 audio: aud,
                                 spectrogram: spec,
                                 wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
@@ -393,11 +402,11 @@ fn main() -> color_eyre::Result<()> {
                                     .min_by(|x, y| x.partial_cmp(y).unwrap())
                                     .unwrap_or(std::f64::INFINITY);
                     
-                                // are we more similar to our parents than to the nearest taboo?
-                                if f64::max(sim1, sim2) * args.taboo_similarity_scale < taboo_sim {
-                                    m_tx.send((gen, info)).unwrap();
-                                } else {
+                                // a
+                                if taboo_sim < similarity_range {
                                     stats.taboo_rejects_count.fetch_add(1, SeqCst);
+                                } else {
+                                    m_tx.send((gen, info)).unwrap();
                                 }
                             }
                     })
@@ -522,8 +531,8 @@ fn main() -> color_eyre::Result<()> {
                     Span::styled("ASM", Style::default().fg(Color::Green))
                 ]),
                 Spans::from(vec![
-                    Span::styled("ver: 0.8-", Style::default()),
-                    Span::styled("GIVES_WATER", Style::default().fg(Color::Blue).add_modifier(Modifier::ITALIC)),
+                    Span::styled("ver: 0.9-", Style::default()),
+                    Span::styled("WANDERLUST", Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC)),
                 ]),
                 Spans::from(vec![
                     Span::styled("another bad ", Style::default()),
@@ -599,7 +608,7 @@ fn main() -> color_eyre::Result<()> {
 
                     Spans::from(vec![
                         Span::styled("vibe alignment: ", label_style),
-                        Span::styled("abyssal", Style::default().add_modifier(Modifier::BOLD).fg(Color::Blue))
+                        Span::styled("sleepless", Style::default().add_modifier(Modifier::BOLD).fg(Color::Blue))
                     ]),
     
                 ];

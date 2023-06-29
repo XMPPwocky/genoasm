@@ -13,6 +13,7 @@ pub struct AnimalInfo {
     pub cost: f64,
     pub audio: Vec<i16>,
     pub spectrogram: Spectrogram,
+    pub gas: u64,
 
     pub wins: AtomicUsize,
     pub trials: AtomicUsize
@@ -37,6 +38,7 @@ impl Clone for AnimalInfo {
             cost: self.cost,
             audio: self.audio.clone(),
             spectrogram: self.spectrogram.clone(),
+            gas: self.gas,
             
             wins: AtomicUsize::new(self.wins.load(Ordering::SeqCst)),
             trials: AtomicUsize::new(self.trials.load(Ordering::SeqCst))
