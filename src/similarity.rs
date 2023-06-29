@@ -3,7 +3,7 @@ pub type Spectrogram = (usize, Vec<f32>);
 
 //const BAND_LOG: f32 = 1.618;
 
-const NUM_BANDS: usize = 64;
+const NUM_BANDS: usize = 24;
 use crate::SAMPLE_RATE;
 
 fn hz_to_mel(hz: f32) -> f32 {
@@ -20,13 +20,13 @@ fn bin_to_band(bin: usize, num_bins: usize) -> usize {
 }
 fn a_weight(hz: f32) -> f32 {
     if hz < 1.0 { return 0.0; }
-    let ra = (12194.0f32.powi(2) * hz.powi(4))
+    (12194.0f32.powi(2) * hz.powi(4))
         / (
             (hz.powi(2) + 20.6f32.powi(2)) 
             * f32::sqrt((hz.powi(2) + 107.7f32.powi(2))*(hz.powi(2) + 737.9f32.powi(2)))
-            * (hz.powi(2) + 12194.0f32.powi(2)));
+            * (hz.powi(2) + 12194.0f32.powi(2)))
 
-    ra // (20.0 * ra.log10() + 2.0)
+    // (20.0 * ra.log10() + 2.0)
 }
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
     let mut spectrums = vec![];
@@ -79,8 +79,13 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
     for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
         let mut chunk_score = 0.0;
         for (&l, &r) in a.iter().zip(b.iter()) {
-            let diff = l as f64 -  r as f64;
-            chunk_score += diff.powi(2);
+            let diff = (l as f64).ln() - (r as f64).ln();
+            let lg = diff.abs();
+            chunk_score += if lg.is_finite() {
+                lg.sqrt()
+            } else {
+                f64::MAX.ln().sqrt()
+            }
         }
 
         out += chunk_score.powi(2);

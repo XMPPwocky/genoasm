@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+
 use num_traits::FromPrimitive;
 
 use num_derive::FromPrimitive;
@@ -12,7 +14,7 @@ pub const REG_BP: u8 = NUM_REGISTERS - 1;
 pub const AREG_REFERENCE: u8 = 0;
 pub const AREG_LUT: u8 = 1;
 
-pub const NUM_INSTRUCTIONS: usize = 65536;
+pub const NUM_INSTRUCTIONS: usize = 4096;
 pub const LUT_SIZE: usize = 1024;
 pub const STACK_SIZE: usize = 256;
 
@@ -52,11 +54,7 @@ impl VmState {
         }
     }
     fn burn_gas(&mut self, gas: u64) {
-        if self.gas > gas {
-            self.gas -= gas;
-        } else {
-            self.gas = 0;
-        }
+        self.gas = self.gas.saturating_sub(gas);
     }
     fn get_reg(&mut self, idx: u8) -> u16 {
         let idx = idx % NUM_REGISTERS;
@@ -77,6 +75,12 @@ impl VmState {
         self.areg_playheads[idx] %= self.aregs[idx].len();
     }
 
+
+    fn unadvance_playhead(&mut self, idx: usize) {
+        self.areg_playheads[idx] += self.aregs[idx].len() - 1;
+        self.areg_playheads[idx] %= self.aregs[idx].len();
+    }
+
     fn push_stack(&mut self, val: u16) {
         self.stack[self.stack_pointer as usize] = val;
         self.stack_pointer = (self.stack_pointer + 1) % STACK_SIZE as u16;
@@ -94,7 +98,7 @@ impl VmState {
         if self.gas == 0 {
             return VmRunResult::OutOfGas;
         }
-        self.gas -= 1;
+        self.burn_gas(1);
 
         self.pc += 1;
 
@@ -123,14 +127,14 @@ impl VmState {
                     .pc
                     .wrapping_add(insn.get_operand_imm16(1));
             }
-            SkipIf => {
+            JmpIf => {
                 let a = insn.get_operand_imm8(0);
                 let b = insn.get_operand_imm8(1);
 
                 let taken = (self.flags & a == a) && (self.flags & b == 0);
 
                 if taken {
-                    self.pc += 1;
+                    self.pc = self.pc.wrapping_add(insn.get_operand_imm8(2) as u16);
                 }
             }
             Const16 => {
@@ -232,7 +236,11 @@ impl VmState {
             In => {
                 let idx = (insn.get_operand_imm8(0) % 3) as usize;  // HACK for effiency lol
                 let sample = self.aregs[idx][self.areg_playheads[idx]];
-                self.advance_playhead(idx);
+                if insn.get_operand_imm8(2) & 0x1 == 0x1 {
+                    self.unadvance_playhead(idx);
+                } else {
+                    self.advance_playhead(idx);
+                }
                 self.set_reg(insn.get_operand_imm8(1), sample as u16);
             }
             Out => {
@@ -242,7 +250,7 @@ impl VmState {
                 self.aregs[idx][self.areg_playheads[idx]] = sample as i16;
                 self.advance_playhead(idx);
 
-                if self.areg_playheads[idx] == 0 {
+                if self.areg_playheads[idx] == 0 && insn.get_operand_imm8(2) & 1 == 1 {
                     res = VmRunResult::Stop;
                 }
             }
@@ -250,7 +258,13 @@ impl VmState {
                 let idx = (insn.get_operand_imm8(0) % NUM_REGISTERS) as usize;
 
                 let pos = self.areg_playheads[idx];
-                let (hi, lo) = ((pos >> 16) as u16, pos as u16);
+
+                let (hi, lo) = if insn.get_operand_imm8(2) & 0x1 == 0x1 {
+                    ((pos >> 16) as u16, pos as u16)
+                } else {
+                    let pos = (pos as f64 / self.aregs[idx].len() as f64 * u32::MAX as f64).floor() as u32;
+                    ((pos >> 16) as u16, pos as u16)
+                };
         
 
                 self.set_reg(REG_ACCUMULATOR, hi);
@@ -264,12 +278,16 @@ impl VmState {
                 let imm = insn.get_operand_imm8(2);
 
                 if imm & 0x1 == 0 {
-                    self.areg_playheads[idx] = val;
+                    let q = (val as f64 / u16::MAX as f64 * self.aregs[idx].len() as f64).floor() as usize;
+                    self.areg_playheads[idx] = q;
                 } else {
                     self.areg_playheads[idx] =
                         (self.areg_playheads[idx] + val) % self.aregs[idx].len();
                 }
-            }
+            },
+            Die => {
+                res = VmRunResult::Stop;
+            },
             Filter => {
                 let imm = insn.get_operand_imm8(0);
                 let kernel_size = imm >> 1;
@@ -323,7 +341,7 @@ pub enum Opcode {
 
     /// Jump to PC + (IMM16_B) if IMM8[0] == 0, else jump to IMM16_B
     Jmp,
-    SkipIf, // Jump to PC + 8 (skip next insn) if (FLAGS & IMMA_8 == IMMA_8) && (FLAGS & IMMB_8 == 0)
+    JmpIf, // Jump to PC + 8 (skip next insn) if (FLAGS & IMMA_8 == IMMA_8) && (FLAGS & IMMB_8 == 0)
 
     Const16, // REG_A = IMM16_B
     Mov,     // REG_A = REG_B
@@ -349,6 +367,8 @@ pub enum Opcode {
     Tell, // store AREG_A playhead to REG_B
     Seek, // Set AREG_A playhead to REG_B
 
+    Die, // stop program
+
     Filter, // set accumulator to the convolution of the next IMM8_A samples from AREG_B (at playhead) w/ next samples from AREG_C
     
     Maximum
@@ -356,7 +376,35 @@ pub enum Opcode {
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 pub struct Instruction(pub [u8; 4]);
+
 impl Instruction {
+    pub fn write(&self, writer: &mut impl Write, addr: u16) -> io::Result<()> {
+        write!(writer, "{addr:04x}: ")?;
+
+        // this can probably be a debug impl
+        if let Some(op) = self.get_opcode() {
+            use Opcode::*;
+            match op {
+                Nop => writeln!(writer, "nop"),
+                Jmp => writeln!(writer, "jmp\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
+                Call => writeln!(writer, "call\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
+                JmpIf => writeln!(writer, "jif\t\t{:02x}\t{:02x}\t{:02x}", self.0[1], self.0[2], addr.wrapping_add(self.get_operand_imm8(2) as u16) % NUM_INSTRUCTIONS as u16),
+
+                op => writeln!(writer, "{:?}\t\t{:02x}\t{:02x}\t{:02x}", op, self.0[1], self.0[2], self.0[3])
+            }?;
+        } else {
+            writeln!(writer, "ill_({:02x})\t\t{:02x}\t{:02x}\t{:02x}", self.0[0], self.0[1], self.0[2], self.0[3])?;
+        }
+
+        Ok(())
+    }
+
+    fn get_operand_reg_name(&self, operand_idx: u8) -> String {
+        // free perf: return an &'static str here
+        let idx = self.get_operand_imm8(operand_idx);
+        format!("r{:?}", idx % NUM_REGISTERS)
+    }
+
     pub fn get_opcode(&self) -> Option<Opcode> {
         FromPrimitive::from_u8( (self.0[0]) % Opcode::Maximum as u8)
     }
