@@ -50,10 +50,10 @@ impl Genoasm {
         assert_eq!(expected.len(), in_audio.len());
         let old_instructions = self.instructions.clone();
 
-        const SIMPLIFY_BLOCK: usize = 8;
+        const SIMPLIFY_BLOCK: usize = 16;
 
         for i in (0..self.instructions.len()).step_by(SIMPLIFY_BLOCK) {
-            /*for j in i..(i+SIMPLIFY_BLOCK).clamp(0, self.instructions.len()) {
+            for j in i..(i+SIMPLIFY_BLOCK).clamp(0, self.instructions.len()) {
                 self.instructions[j].0[0] = Opcode::Die as u8;
             }
 
@@ -61,7 +61,7 @@ impl Genoasm {
 
             if out == expected {
                 continue;
-            }*/
+            }
 
             for j in i..(i+SIMPLIFY_BLOCK).clamp(0, self.instructions.len()) {
                 self.instructions[j].0[0] = Opcode::Nop as u8;
