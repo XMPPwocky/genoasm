@@ -405,9 +405,12 @@ fn main() -> color_eyre::Result<()> {
             });
         }
 
-        for (mut animal, info) in rx.iter() {
+        for (animal, info) in rx.iter() {
             let pos = population
                 .partition_point(|x| x.1.cost < info.cost);
+            if pos == population.len() {
+                continue; // obsoleted by a previous find this generation
+            }
             if pos < population.len() && population.len() >= args.population_size {
                 population.pop().unwrap();
             }
@@ -417,6 +420,7 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+        population.dedup_by(|a, b| a.0.instructions == b.0.instructions);
         /*population.dedup_by(|a, b| {
             // cache this. what are you Doing. FREEPERF
             let sim = compare_spectrograms(&a.1.spectrogram, &b.1.spectrogram);

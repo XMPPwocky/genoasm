@@ -374,12 +374,14 @@ pub enum Opcode {
     Maximum
 }
 
-#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Instruction(pub [u8; 4]);
 
 impl Instruction {
     pub fn write(&self, writer: &mut impl Write, addr: u16) -> io::Result<()> {
         write!(writer, "{addr:04x}: ")?;
+
+        let addr = addr.wrapping_add(1);
 
         // this can probably be a debug impl
         if let Some(op) = self.get_opcode() {
@@ -399,11 +401,11 @@ impl Instruction {
         Ok(())
     }
 
-    fn get_operand_reg_name(&self, operand_idx: u8) -> String {
+    /*fn get_operand_reg_name(&self, operand_idx: u8) -> String {
         // free perf: return an &'static str here
         let idx = self.get_operand_imm8(operand_idx);
         format!("r{:?}", idx % NUM_REGISTERS)
-    }
+    }*/
 
     pub fn get_opcode(&self) -> Option<Opcode> {
         FromPrimitive::from_u8( (self.0[0]) % Opcode::Maximum as u8)

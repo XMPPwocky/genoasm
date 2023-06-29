@@ -29,7 +29,7 @@ impl Genoasm {
             areg.push(0);
         }
 
-        let gas_limit = 1024 * audio.len() as u64;
+        let gas_limit = 128 * audio.len() as u64;
 
         let mut vm = VmState::new(aregs, gas_limit);
 
@@ -42,7 +42,7 @@ impl Genoasm {
         let f = normalize_audio(&vm.aregs[3]); // useless clone lol
         (
             f,
-            32.0 +  ((gas_limit - vm.gas_remaining() + 1) as f64).ln() // hack dont scale this here you doof
+            1.0 // 1024.0 +  ((gas_limit - vm.gas_remaining() + 1) as f64).ln() // hack dont scale this here you doof
         )
     }
 
@@ -50,11 +50,11 @@ impl Genoasm {
         assert_eq!(expected.len(), in_audio.len());
         let old_instructions = self.instructions.clone();
 
-        const SIMPLIFY_BLOCK: usize = 16;
+        const SIMPLIFY_BLOCK: usize = 1;
 
         for i in (0..self.instructions.len()).step_by(SIMPLIFY_BLOCK) {
             for j in i..(i+SIMPLIFY_BLOCK).clamp(0, self.instructions.len()) {
-                self.instructions[j].0[0] = Opcode::Die as u8;
+               self.instructions[j].0[0] = Opcode::Die as u8;
             }
 
             let out = self.feed(in_audio, in_audio2).0;

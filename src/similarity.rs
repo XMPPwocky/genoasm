@@ -79,13 +79,9 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
     for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
         let mut chunk_score = 0.0;
         for (&l, &r) in a.iter().zip(b.iter()) {
-            let diff = (l as f64).ln() - (r as f64).ln();
+            let diff = l as f64 - r as f64;
             let lg = diff.abs();
-            chunk_score += if lg.is_finite() {
-                lg.sqrt()
-            } else {
-                f64::MAX.ln().sqrt()
-            }
+            chunk_score += lg;
         }
 
         out += chunk_score.powi(2);
