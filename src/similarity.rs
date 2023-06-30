@@ -69,14 +69,11 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
     (NUM_BANDS, spectrums)
 }
 
-pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
+pub fn compare_spectrograms_internal<'a>(a: &'a Spectrogram, b: &'a Spectrogram) -> impl Iterator<Item=f64> + 'a {
     assert_eq!(a.0, b.0);
     let n_bands = a.0;
 
-    let mut out = 0.0;
-
-
-    for (a, b) in a.1.chunks(n_bands).zip(b.1.chunks(n_bands)) {
+    a.1.chunks(n_bands).zip(b.1.chunks(n_bands)).map(|(a, b)| {
         let mut chunk_score = 0.0;
         for (&l, &r) in a.iter().zip(b.iter()) {
             let diff = l as f64 - r as f64;
@@ -84,15 +81,41 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
             chunk_score += lg;
         }
 
-        out += chunk_score.sqrt(); //f64::max(out, chunk_score);
-    }
-    out // / (a.1.len() as f64)
+        chunk_score // //f64::max(out, chunk_score);
+    })
 }
-pub fn spectral_fitness(candidate: &[i16], seed: &[i16], r2c: &dyn RealToComplex<f32>) -> f64 {
-    assert_eq!(candidate.len(), seed.len());
 
-    let buf = compute_spectrogram(candidate, r2c);
-    let seed = compute_spectrogram(seed, r2c); // this should be cached
+pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
+    compare_spectrograms_internal(a, b).sum()
+}
 
-    compare_spectrograms(&buf, &seed)
+pub fn spectrogram_error_vector(a: &Spectrogram, b: &Spectrogram) -> ErrorVector {
+    ErrorVector(compare_spectrograms_internal(a, b).collect())
+}
+
+#[derive(Clone)]
+pub struct ErrorVector(pub Vec<f64>);
+impl ErrorVector {
+    pub fn len(&self) -> usize {self.0.len()}
+    pub fn sum(&self) -> f64 {self.0.iter().cloned().sum()}
+    pub fn dot(&self, other: &ErrorVector) -> f64 {
+        self.0.iter().cloned().zip(other.0.iter().cloned()).map(|(a, b)| a*b).sum()
+    }
+    pub fn inv_dot(&self, other: &ErrorVector) -> f64 {
+        self.0.iter().cloned().zip(other.0.iter().cloned()).map(|(a, b)|  a * ((1.0/b).clamp(0.0, 1e50))).sum()
+    }
+    pub fn scale(&mut self, scale: f64) {
+        for x in self.0.iter_mut() { *x *= scale; }
+    }
+    pub fn normalize(&mut self) {
+        let scale = self.sum();
+        self.scale(1.0 / scale);
+    }
+}
+impl<'a> std::ops::AddAssign<&'a Self>  for ErrorVector {
+    fn add_assign(&mut self, rhs: &'a Self) {
+        for (out, r) in self.0.iter_mut().zip(rhs.0.iter()) {
+            *out += *r;
+        }
+    }
 }

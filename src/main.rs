@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 use std::{time::Instant, io::Write};
 
-use std::collections::{VecDeque, HashSet};
+use std::collections::{VecDeque, HashSet, HashMap};
 use animal::{genoasm, Animal};
 use tui::{widgets::{Dataset, Chart, Block, GraphType, Axis, Paragraph, Wrap, Borders, Gauge}, symbols, style::{Style, Color, Modifier}, text::{Span, Spans}, layout::{Alignment, Layout, Direction, Constraint}};
 use rand::{Rng, seq::IteratorRandom};
@@ -18,7 +18,8 @@ const SAMPLE_RATE: f32 = 22050.0; // 44100.0;
 
 use util::normalize_audio;
 
-use crate::{similarity::{spectral_fitness, compute_spectrogram, compare_spectrograms}, animal::{genoasm::Genoasm, AnimalInfo}};
+use crate::similarity::{spectrogram_error_vector, Spectrogram, ErrorVector};
+use crate::{similarity::{compute_spectrogram, compare_spectrograms}, animal::{genoasm::Genoasm, AnimalInfo}};
 
 pub mod animal;
 pub mod corrupt;
@@ -169,9 +170,13 @@ fn main() -> color_eyre::Result<()> {
 
     //let noisy_seed = mix_audio(&seed, &noise, 0.1);
     let noisy_seed = normalize_audio(&noisy_seed);
+    let noisy_seed_spec = compute_spectrogram(&noisy_seed, &*r2c);
+    let noisy_seed_err = spectrogram_error_vector(&seed_spec,& noisy_seed_spec);
+    let f = noisy_seed_err.sum();
     let noisy_seed_info = AnimalInfo {
-        cost: 0.0, audio: noisy_seed.clone(), spectrogram: compute_spectrogram(&noisy_seed, &*r2c),
+        cost: f, audio: noisy_seed.clone(), spectrogram: noisy_seed_spec,
         parent_sims: (0.0, 0.0),
+        error_vector: noisy_seed_err,
         wins: AtomicUsize::new(0), trials: AtomicUsize::new(0), gas: 0 };
 
     let mut eve;
@@ -179,7 +184,7 @@ fn main() -> color_eyre::Result<()> {
 
     terminal.clear()?;
 
-    let gas_limit = 256 * seed.len() as u64;
+    let gas_limit = 128 * seed.len() as u64;
 
     for i in 0..args.num_eves {
         debug!("{i}/{} Eves", args.num_eves);
@@ -204,9 +209,11 @@ fn main() -> color_eyre::Result<()> {
 
         let (aud, gas) = eve.feed(&noisy_seed, None, gas_limit);
         let spec = compute_spectrogram(&aud, &*r2c);
-        let f = spectral_fitness(&aud, &seed, &*r2c);
+        let e = spectrogram_error_vector(&spec, &noisy_seed_info.spectrogram);
+        let f = e.sum() * (1.0+1.0);
         let info = AnimalInfo {
             cost: f,
+            error_vector: e,
             spectrogram: spec,
             parent_sims: (0.0, 0.0),
             gas,
@@ -229,8 +236,10 @@ fn main() -> color_eyre::Result<()> {
 
     let mut f_history = vec![];
     let mut a_history = vec![];
+    let mut global_error = ErrorVector(std::iter::repeat(0.0).take(population[0].1.error_vector.len()).collect::<Vec<_>>());
 
     for current_generation in 0..args.generations {
+         
         if rng.gen_bool(0.00001) {
             // Meteor strike!
             taboo.clear();
@@ -238,8 +247,6 @@ fn main() -> color_eyre::Result<()> {
                 population.drain(..).map(|(_animal, info)| info.spectrogram).take(TABOO_LEN)
             );
             population = eves.clone();
-
-
         }
         let mut ugh = 0;
         let l = taboo.len();
@@ -259,43 +266,12 @@ fn main() -> color_eyre::Result<()> {
             });
         }
 
-        if population[0].1.cost < best_cost {
-            {
-                let x = &mut population[0];
+        
+        let best = population.iter()
+            .enumerate()
+            .max_by(|a,b| (a.1.1.error_vector.sum().partial_cmp(&b.1.1.error_vector.sum()).unwrap())).unwrap().0;
 
-                x.0.simplify(&x.1.audio, x.1.gas, &noisy_seed, None);
-            }
-            best_cost = population[0].1.cost;
-            last_best_time = Instant::now();
-
-            if all_stars.len() == NUM_ALL_STARS {
-                let idx = rng.gen_range(0..all_stars.len());
-                all_stars[idx] = population[0].clone();
-            } else {
-                all_stars.push_back(population[0].clone());
-            }
-
-            if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
-            //taboo.push_front(population[0].1.spectrogram.clone());
-            // if the best is more like the worst than anything taboo, taboo it.
-            /*let taboo_sim = taboo.iter()
-                .map(|x| compare_spectrograms(&population[0].1.spectrogram, x))
-                .min_by(|x, y| x.partial_cmp(y).unwrap())
-                .unwrap_or(std::f64::INFINITY);*/
-
-            //if taboo_sim >= compare_spectrograms(&population[0].1.spectrogram, &population[population.len() - 1].1.spectrogram) {
-                taboo.push_front(population[0].1.spectrogram.clone());
-                population.retain(|(animal, info)| {
-                    compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::max(info.parent_sims.0, info.parent_sims.1)
-                });
-                while population.len() < 32 {
-                    let h = rng.gen_range(0..eves.len());
-                    population.push(eves[h].clone());
-                }
-                //population.drain(1..population.len() / 4); // kill all but the best rockstars
-                //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores 
-            //}
-
+        if population[best].1.error_vector.sum() < best_cost {
             if let Some(best_dir) = args.best_output.as_ref() {
                 let path = std::path::PathBuf::from(best_dir).join(format!("{}.wav", current_generation));
 
@@ -318,9 +294,62 @@ fn main() -> color_eyre::Result<()> {
                 }
                 f.finish()?;   
             }
+            {
+                let x = &mut population[best];
+
+                x.0.simplify(&x.1.audio, x.1.gas, &noisy_seed, None);
+            }
+            best_cost = population[best].1.error_vector.sum();
+            last_best_time = Instant::now();
+
+            if all_stars.len() == NUM_ALL_STARS {
+                let idx = rng.gen_range(0..all_stars.len());
+                all_stars[idx] = population[best].clone();
+            } else {
+                all_stars.push_back(population[best].clone());
+            }
+
+            if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
+            //taboo.push_front(population[0].1.spectrogram.clone());
+            // if the best is more like the worst than anything taboo, taboo it.
+            /*let taboo_sim = taboo.iter()
+                .map(|x| compare_spectrograms(&population[0].1.spectrogram, x))
+                .min_by(|x, y| x.partial_cmp(y).unwrap())
+                .unwrap_or(std::f64::INFINITY);*/
+
+            //if taboo_sim >= compare_spectrograms(&population[0].1.spectrogram, &population[population.len() - 1].1.spectrogram) {
+                taboo.push_front(population[0].1.spectrogram.clone());
+                /*population.retain(|(animal, info)| {
+                    compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::max(info.parent_sims.0, info.parent_sims.1)
+                });
+                while population.len() < 32 {
+                    let h = rng.gen_range(0..eves.len());
+                    population.push(eves[h].clone());
+                }*/
+                //population.drain(1..population.len() / 4); // kill all but the best rockstars
+                //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores 
+            //}
+
+          
         }
 
         let cutoff = population[population.len() - 1].1.cost;
+
+        let mut gen_error = population[0].1.error_vector.clone();
+        for (_animal, info) in &population[1..population.len() / 4] {
+            gen_error += &info.error_vector;
+        }
+        gen_error.normalize();
+        gen_error.scale(0.02);
+        global_error.scale(0.98);
+        global_error += &gen_error;
+
+
+        for (_animal, info) in &mut population {
+            info.cost = info.error_vector.sum() * 0.1 + info.error_vector.inv_dot(&global_error);
+        }
+        population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+
 
         debug!("Generation {:?}", current_generation);
 
@@ -334,6 +363,7 @@ fn main() -> color_eyre::Result<()> {
             let taboo = &taboo;
             let stats = &stats;
             let noisy_seed = &noisy_seed;
+            let global_error = &global_error;
 
 
             let similarity_range = compare_spectrograms(&population[0].1.spectrogram, &population[population.len() /4 ].1.spectrogram);
@@ -349,7 +379,7 @@ fn main() -> color_eyre::Result<()> {
                                     // use an all-star
                                     v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
                                 } else {
-                                    for _ in 0..64 {
+                                    for _ in 0..128 {
                                         let idx = rng.gen_range(0..population.len());
                                         v = &population[idx];
                                         if rng.gen_bool((idx as f64 / (population.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
@@ -364,7 +394,7 @@ fn main() -> color_eyre::Result<()> {
                                     // use an all-star
                                     v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
                                 } else {
-                                    for _ in 0..64 {
+                                    for _ in 0..128 {
                                         let idx = rng.gen_range(0..population.len());
                                         v = &population[idx];
                                         if rng.gen_bool((idx as f64 / (population.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
@@ -376,7 +406,7 @@ fn main() -> color_eyre::Result<()> {
 
                                 let (adam,  adam_info) = v;
 
-                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.01) {
+                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.02) {
                                     (eve_info, noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
                                 } else {
                                     (eve_info, adam_info, eve.befriend(adam).mutate())
@@ -388,7 +418,7 @@ fn main() -> color_eyre::Result<()> {
                             stats.trials_count.fetch_add(1, SeqCst);
                             
                             par_info.trials.fetch_add(1, Ordering::SeqCst);
-                            par2_info.trials.fetch_add(1, Ordering::SeqCst);
+                            //par2_info.trials.fetch_add(1, Ordering::SeqCst);
 
                             if !screen(&gen) {
                                 return;
@@ -396,6 +426,9 @@ fn main() -> color_eyre::Result<()> {
 
                             //let audio_parent = &population[0].1.audio;
 
+                            if current_generation < 4096 {
+                                gen.lut.iter_mut().for_each(|x| *x = 0)
+                            }
                             let (aud, gas) = gen.feed(noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
                             // silly hack....
                             //if aud[aud.len() - 1] == 0 { return; }
@@ -405,9 +438,11 @@ fn main() -> color_eyre::Result<()> {
                             let (sim1, sim2) = (compare_spectrograms(&spec, &par_info.spectrogram)
                                 ,compare_spectrograms(&spec, &par2_info.spectrogram)); 
 
-                            let f = compare_spectrograms(&spec, seed_spec);
+                            let e = spectrogram_error_vector(&spec, seed_spec);
+                            let f = e.sum()*0.1 + e.inv_dot(global_error);
                             let info = AnimalInfo {
                                 cost: f,
+                                error_vector: e,
                                 parent_sims: (sim1, sim2),
                                 gas,
                                 audio: aud,
@@ -419,7 +454,7 @@ fn main() -> color_eyre::Result<()> {
                                 // medidate on min/max switch here
                                 if f < f64::max(par_info.cost, par2_info.cost) {
                                     par_info.wins.fetch_add(1, Ordering::SeqCst);
-                                    par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                                    //par2_info.wins.fetch_add(1, Ordering::SeqCst);
                                 }
 
                                 let taboo_sim = taboo.iter()
@@ -454,26 +489,29 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-        let mut seens = HashSet::new();
+        let mut seens: HashMap<Box<[vm::Instruction; 4096]>, usize>= HashMap::new();
 
         // perf: goofy clone here
-        population.retain(|elem| seens.insert(elem.0.instructions.clone()));
-
-        /*population.dedup_by(|a, b| {
-            // cache this. what are you Doing. FREEPERF
-            let sim = compare_spectrograms(&a.1.spectrogram, &b.1.spectrogram);
-            let same_bucket = sim <= args.parent_child_diff;
-            if same_bucket {
-                // b will die!
+        for (i, elem) in population.iter().enumerate() {
+            if let Some(&prev) = seens.get(&elem.0.instructions) {
+               // b will die!
                 // add its stats to a's, so they may live on
                 // i think this will lose info still if there's more than 2 "same-bucket" things in garbo
                 // we shouldn't use dedup_by like this
                 // but it's better than nothing
-                a.1.trials.fetch_add(b.1.trials.load(Ordering::SeqCst), Ordering::SeqCst);
-                a.1.wins.fetch_add(b.1.wins.load(Ordering::SeqCst), Ordering::SeqCst);
+                population[prev].1.trials.fetch_add(elem.1.trials.load(Ordering::SeqCst), Ordering::SeqCst);
+                population[prev].1.wins.fetch_add(elem.1.wins.load(Ordering::SeqCst), Ordering::SeqCst); 
+            } else {
+                seens.insert(elem.0.instructions.clone(), i);
             }
-            same_bucket
-        });*/
+        }
+        let mut ugh = 0;
+        population.retain(|elem| {
+            let agh = ugh; 
+            ugh = ugh + 1;
+            seens.get(&elem.0.instructions) == Some(&agh)
+        });
+
         f_history.push((current_generation as f64, population[0].1.cost.ln()));
 
         // secretly upper 25th %ile now :U
@@ -560,8 +598,8 @@ fn main() -> color_eyre::Result<()> {
                     Span::styled("ASM", Style::default().fg(Color::Green))
                 ]),
                 Spans::from(vec![
-                    Span::styled("ver: 0.12-", Style::default()),
-                    Span::styled("POLARIS", Style::default().fg(Color::LightYellow).add_modifier(Modifier::ITALIC)),
+                    Span::styled("ver: 0.13-", Style::default()),
+                    Span::styled("CNIDARIA", Style::default().fg(Color::LightYellow).add_modifier(Modifier::ITALIC)),
                 ]),
                 Spans::from(vec![
                     Span::styled("another bad ", Style::default()),
@@ -637,7 +675,7 @@ fn main() -> color_eyre::Result<()> {
 
                     Spans::from(vec![
                         Span::styled("vibe alignment: ", label_style),
-                        Span::styled("stellar", Style::default().add_modifier(Modifier::BOLD).fg(Color::Magenta))
+                        Span::styled("void", Style::default().add_modifier(Modifier::BOLD).fg(Color::Magenta))
                     ]),
     
                 ];

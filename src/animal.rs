@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::similarity::Spectrogram;
+use crate::similarity::{Spectrogram, ErrorVector};
 
 pub mod genoasm;
 pub trait Animal {
@@ -13,6 +13,7 @@ pub struct AnimalInfo {
     pub cost: f64,
     pub audio: Vec<i16>,
     pub spectrogram: Spectrogram,
+    pub error_vector: ErrorVector,
     pub gas: u64,
     pub parent_sims: (f64, f64),
 
@@ -39,6 +40,7 @@ impl Clone for AnimalInfo {
             cost: self.cost,
             audio: self.audio.clone(),
             spectrogram: self.spectrogram.clone(),
+            error_vector: self.error_vector.clone(),
             gas: self.gas,
             parent_sims: self.parent_sims,
             
