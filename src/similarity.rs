@@ -81,7 +81,7 @@ pub fn compare_spectrograms_internal<'a>(a: &'a Spectrogram, b: &'a Spectrogram)
             chunk_score += lg;
         }
 
-        chunk_score // //f64::max(out, chunk_score);
+        chunk_score.sqrt() // //f64::max(out, chunk_score);
     })
 }
 

@@ -66,30 +66,16 @@ impl Genoasm {
                 } else {
                     continue;
                 }
-
-                changed = false;
+                // revert
                 for j in i..(i+block_size).clamp(0, self.instructions.len()) {
-                    changed |= self.instructions[j].get_opcode() != Some(Opcode::Nop);
-                    self.instructions[j].0[0] = Opcode::Nop as u8;
-                }
-                let revert = if changed {
-                    let out = self.feed(in_audio, in_audio2, gas_limit).0;
-                    out != expected
-                } else {
-                    false
-                };
-
-                if revert {
-                    for j in i..(i+block_size).clamp(0, self.instructions.len()) {
-                        self.instructions[j].0[0] = old_instructions[j].0[0];
-                    }
+                    self.instructions[j].0[0] = old_instructions[j].0[0];
                 }
             }
 
             block_size /= 2;
         }
 
-        // unsled NOPs
+       /*  // unsled NOPs
         let mut streak = 0;
         for i in 0..self.instructions.len() {
             if self.instructions[i].0[0] == Opcode::Nop as u8 {
@@ -104,9 +90,10 @@ impl Genoasm {
                 }
                 streak = 0;
             }
-        }
+        }*/
 
         // jump forwarding
+        /* 
         let mut changed = true;
         while changed {
             changed = false;
@@ -134,7 +121,7 @@ impl Genoasm {
                     }
                 }
             }
-        }
+        }*/
 
         // double check safety
         // HACK: try adn detect if original timed out here

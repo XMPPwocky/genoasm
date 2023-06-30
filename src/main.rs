@@ -173,18 +173,19 @@ fn main() -> color_eyre::Result<()> {
     let noisy_seed_spec = compute_spectrogram(&noisy_seed, &*r2c);
     let noisy_seed_err = spectrogram_error_vector(&seed_spec,& noisy_seed_spec);
     let f = noisy_seed_err.sum();
+
+    let gas_limit = 48 * seed.len() as u64;
     let noisy_seed_info = AnimalInfo {
         cost: f, audio: noisy_seed.clone(), spectrogram: noisy_seed_spec,
         parent_sims: (0.0, 0.0),
         error_vector: noisy_seed_err,
-        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0), gas: 0 };
+        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0), gas: gas_limit };
 
     let mut eve;
     debug!("Generating Eve(s)");
 
     terminal.clear()?;
 
-    let gas_limit = 128 * seed.len() as u64;
 
     for i in 0..args.num_eves {
         debug!("{i}/{} Eves", args.num_eves);
@@ -318,7 +319,7 @@ fn main() -> color_eyre::Result<()> {
                 .unwrap_or(std::f64::INFINITY);*/
 
             //if taboo_sim >= compare_spectrograms(&population[0].1.spectrogram, &population[population.len() - 1].1.spectrogram) {
-                taboo.push_front(population[0].1.spectrogram.clone());
+               // taboo.push_front(population[0].1.spectrogram.clone());
                 /*population.retain(|(animal, info)| {
                     compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::max(info.parent_sims.0, info.parent_sims.1)
                 });
@@ -340,13 +341,13 @@ fn main() -> color_eyre::Result<()> {
             gen_error += &info.error_vector;
         }
         gen_error.normalize();
-        gen_error.scale(0.02);
-        global_error.scale(0.98);
+        gen_error.scale(0.1);
+        global_error.scale(0.9);
         global_error += &gen_error;
 
 
         for (_animal, info) in &mut population {
-            info.cost = info.error_vector.sum() * 0.1 + info.error_vector.dot(&global_error);
+            info.cost = info.error_vector.dot(&global_error);
         }
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
@@ -368,7 +369,7 @@ fn main() -> color_eyre::Result<()> {
 
             let similarity_range = compare_spectrograms(&population[0].1.spectrogram, &population[population.len() /4 ].1.spectrogram);
             rayon::scope(move |s| {
-                for _ in 0..128 {
+                for _ in 0..512 {
                     let m_tx = tx.clone();
         
                     s.spawn(move |_| {
@@ -426,7 +427,7 @@ fn main() -> color_eyre::Result<()> {
 
                             //let audio_parent = &population[0].1.audio;
 
-                            if current_generation < 4096 {
+                            if current_generation < 1024 {
                                 gen.lut.iter_mut().for_each(|x| *x = 0)
                             }
                             let (aud, gas) = gen.feed(noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
@@ -439,7 +440,7 @@ fn main() -> color_eyre::Result<()> {
                                 ,compare_spectrograms(&spec, &par2_info.spectrogram)); 
 
                             let e = spectrogram_error_vector(&spec, seed_spec);
-                            let f = e.sum()*0.1 + e.dot(global_error);
+                            let f = e.dot(global_error);
                             let info = AnimalInfo {
                                 cost: f,
                                 error_vector: e,

@@ -113,15 +113,12 @@ impl VmState {
         match opcode {
             Nop | Maximum => (),
 
-            Jmp | Call => {
-                if opcode == Call {
-                    let prev_bp = self.get_reg(REG_BP);
+            Call => {
+                let prev_bp = self.get_reg(REG_BP);
 
-                    self.push_stack(self.pc);
-                    self.push_stack(prev_bp);
-                    self.set_reg(REG_BP, self.stack_pointer);
-                    // then "fallthru" to jmp :3
-                }
+                self.push_stack(self.pc);
+                self.push_stack(prev_bp);
+                self.set_reg(REG_BP, self.stack_pointer);
 
                 self.pc = self
                     .pc
@@ -134,7 +131,8 @@ impl VmState {
                 let taken = (self.flags & a == a) && (self.flags & b == 0);
 
                 if taken {
-                    self.pc = self.pc.wrapping_add(insn.get_operand_imm8(2) as u16);
+                    // offset
+                    self.pc = self.pc.wrapping_sub(128).wrapping_add(insn.get_operand_imm8(2) as u16);
                 }
             }
             Const16 => {
@@ -293,7 +291,7 @@ impl VmState {
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
 
-                self.burn_gas(kernel_size as u64);
+                self.burn_gas(kernel_size as u64 / 8);
 
                 let audio_idx = 3; // always out tbh // (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
                 let mut audio = Vec::new();
@@ -342,9 +340,7 @@ pub enum Flag {
 pub enum Opcode {
     Nop,
 
-    /// Jump to PC + (IMM16_B) if IMM8[0] == 0, else jump to IMM16_B
-    Jmp,
-    JmpIf, // Jump to PC + 8 (skip next insn) if (FLAGS & IMMA_8 == IMMA_8) && (FLAGS & IMMB_8 == 0)
+    JmpIf,
 
     Const16, // REG_A = IMM16_B
     Mov,     // REG_A = REG_B
@@ -409,7 +405,7 @@ impl Instruction {
             use Opcode::*;
             match op {
                 Nop => writeln!(writer, "nop"),
-                Jmp => writeln!(writer, "jmp\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
+                //Jmp => writeln!(writer, "jmp\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
                 Call => writeln!(writer, "call\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
                 JmpIf => writeln!(writer, "jif\t\t{:02x},\t{:02x},\t{:02x}", self.0[1], self.0[2], addr.wrapping_add(self.get_operand_imm8(2) as u16) % NUM_INSTRUCTIONS as u16),
                 
