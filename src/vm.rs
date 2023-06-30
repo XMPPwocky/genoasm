@@ -15,7 +15,7 @@ pub const AREG_REFERENCE: u8 = 0;
 pub const AREG_LUT: u8 = 1;
 
 pub const NUM_INSTRUCTIONS: usize = 4096;
-pub const LUT_SIZE: usize = 1024;
+pub const LUT_SIZE: usize = 256;
 pub const STACK_SIZE: usize = 256;
 
 
@@ -56,7 +56,7 @@ impl VmState {
     fn burn_gas(&mut self, gas: u64) {
         self.gas = self.gas.saturating_sub(gas);
     }
-    fn get_reg(&mut self, idx: u8) -> u16 {
+    fn get_reg(&self, idx: u8) -> u16 {
         let idx = idx % NUM_REGISTERS;
 
         if idx == REG_ZERO {
@@ -246,8 +246,8 @@ impl VmState {
             Out => {
                 let sample = self.get_reg(insn.get_operand_imm8(1));
 
-                let idx = 3; //(insn.get_operand_imm8(0) % ) as usize; // HACK for efficiency
-                self.aregs[idx][self.areg_playheads[idx]] = sample as i16;
+                let idx = (insn.get_operand_imm8(0) % 4) as usize; // HACK for efficiency
+                self.aregs[idx][self.areg_playheads[idx]] += sample as i16;
                 self.advance_playhead(idx);
 
                 if self.areg_playheads[idx] == 0 && insn.get_operand_imm8(2) & 1 == 1 {
@@ -293,30 +293,33 @@ impl VmState {
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
 
-                self.burn_gas(kernel_size as u64 / 8);
+                self.burn_gas(kernel_size as u64);
 
-                let kernel_idx = 3; // always LUT tbh (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
+                let audio_idx = 3; // always out tbh // (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
+                let mut audio = Vec::new();
+                std::mem::swap(&mut audio, &mut self.aregs[audio_idx]); // this will cause problems later
+
+
+                let kernel_idx = 2; // always LUT tbh (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
                 let kernel = &self.aregs[kernel_idx];
-
-                let audio_idx = (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
-                let audio = &self.aregs[audio_idx];
 
                 let mut kernel_playhead = self.areg_playheads[kernel_idx];
                 let mut audio_playhead = self.areg_playheads[audio_idx];
 
-                let mut out_full = 0i32;
+                let scale = self.get_reg(insn.get_operand_imm8(REG_ACCUMULATOR)) as i16;
                 for _ in 0..kernel_size {
-                    kernel_playhead = (kernel_playhead + 1) % kernel.len();
+                    kernel_playhead = (kernel_playhead + kernel.len() - 11) % kernel.len();
                     audio_playhead = (audio_playhead + 1) % audio.len();
-                    out_full += kernel[kernel_playhead] as i32 * audio[audio_playhead] as i32;
+
+                    audio[audio_playhead] += kernel[kernel_playhead] * scale;
                 }
+
+
+                std::mem::swap(&mut audio, &mut self.aregs[audio_idx]);
 
                 if incr_playhead {
                     self.advance_playhead(audio_idx);
                 }
-
-                let out = (out_full >> 16) as i16;
-                self.set_reg(REG_ACCUMULATOR, out as u16);
             }
         }
 
@@ -335,7 +338,7 @@ pub enum Flag {
 }
 
 #[repr(u8)]
-#[derive(FromPrimitive, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(FromPrimitive, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Opcode {
     Nop,
 
@@ -374,7 +377,7 @@ pub enum Opcode {
     Maximum
 }
 
-#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize, Eq)]
 pub struct Instruction(pub [u8; 4]);
 impl PartialEq for Instruction {
     fn eq(&self, other: &Self) -> bool {
@@ -383,6 +386,15 @@ impl PartialEq for Instruction {
             Some(Opcode::Die | Opcode::Nop) => (self.get_opcode() == other.get_opcode()),
             _ => self.0 == other.0
         }
+    }
+}
+impl std::hash::Hash for Instruction {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self.get_opcode() {
+            // die and nop take no args, so just cmp opcode
+            Some(Opcode::Die | Opcode::Nop) => (self.get_opcode().hash(state)),
+            _ => self.0.hash(state)
+        };
     }
 }
 
@@ -399,9 +411,23 @@ impl Instruction {
                 Nop => writeln!(writer, "nop"),
                 Jmp => writeln!(writer, "jmp\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
                 Call => writeln!(writer, "call\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
-                JmpIf => writeln!(writer, "jif\t\t{:02x}\t{:02x}\t{:02x}", self.0[1], self.0[2], addr.wrapping_add(self.get_operand_imm8(2) as u16) % NUM_INSTRUCTIONS as u16),
+                JmpIf => writeln!(writer, "jif\t\t{:02x},\t{:02x},\t{:02x}", self.0[1], self.0[2], addr.wrapping_add(self.get_operand_imm8(2) as u16) % NUM_INSTRUCTIONS as u16),
+                
+                Const16 => writeln!(writer,
+                    "const\t\t{},\t{:04x}",
+                    self.get_operand_reg_name(0),
+                    self.get_operand_imm16(1)),
 
-                op => writeln!(writer, "{:?}\t\t{:02x}\t{:02x}\t{:02x}", op, self.0[1], self.0[2], self.0[3])
+                Out => writeln!(writer,
+                    "out\t\t{},\tA{},\t{}",
+                    self.get_operand_reg_name(1),
+                    3, // HACK FIXED AUDIO OUT, AUDIO FUCKER DISASSEMBLE CORRECTLY
+                    if self.get_operand_imm8(2) & 1 == 1 {
+                        "stop"
+                    } else {
+                        "wrap"
+                    }),
+                op => writeln!(writer, "{:?}\t\t{:02x},\t{:02x},\t{:02x}", op, self.0[1], self.0[2], self.0[3])
             }?;
         } else {
             writeln!(writer, "ill_({:02x})\t\t{:02x}\t{:02x}\t{:02x}", self.0[0], self.0[1], self.0[2], self.0[3])?;
@@ -410,11 +436,11 @@ impl Instruction {
         Ok(())
     }
 
-    /*fn get_operand_reg_name(&self, operand_idx: u8) -> String {
+    pub fn get_operand_reg_name(&self, operand_idx: u8) -> String {
         // free perf: return an &'static str here
         let idx = self.get_operand_imm8(operand_idx);
         format!("r{:?}", idx % NUM_REGISTERS)
-    }*/
+    }
 
     pub fn get_opcode(&self) -> Option<Opcode> {
         FromPrimitive::from_u8( (self.0[0]) % Opcode::Maximum as u8)

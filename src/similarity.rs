@@ -80,13 +80,13 @@ pub fn compare_spectrograms(a: &Spectrogram, b: &Spectrogram) -> f64 {
         let mut chunk_score = 0.0;
         for (&l, &r) in a.iter().zip(b.iter()) {
             let diff = l as f64 - r as f64;
-            let lg = diff.abs();
+            let lg = diff.powi(2);
             chunk_score += lg;
         }
 
-        out += chunk_score.powi(2);
+        out += chunk_score.sqrt(); //f64::max(out, chunk_score);
     }
-    out / (a.1.len() as f64)
+    out // / (a.1.len() as f64)
 }
 pub fn spectral_fitness(candidate: &[i16], seed: &[i16], r2c: &dyn RealToComplex<f32>) -> f64 {
     assert_eq!(candidate.len(), seed.len());

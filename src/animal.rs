@@ -14,6 +14,7 @@ pub struct AnimalInfo {
     pub audio: Vec<i16>,
     pub spectrogram: Spectrogram,
     pub gas: u64,
+    pub parent_sims: (f64, f64),
 
     pub wins: AtomicUsize,
     pub trials: AtomicUsize
@@ -39,6 +40,7 @@ impl Clone for AnimalInfo {
             audio: self.audio.clone(),
             spectrogram: self.spectrogram.clone(),
             gas: self.gas,
+            parent_sims: self.parent_sims,
             
             wins: AtomicUsize::new(self.wins.load(Ordering::SeqCst)),
             trials: AtomicUsize::new(self.trials.load(Ordering::SeqCst))

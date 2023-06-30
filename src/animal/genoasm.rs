@@ -1,11 +1,9 @@
 use rand::Rng;
-use realfft::RealToComplex;
 use serde::{Deserialize, Serialize};
 
 use crate::{animal::Animal, util::normalize_audio, vm::*};
 use serde_with::serde_as;
 
-use super::AnimalInfo;
 #[serde_as]
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Genoasm {
@@ -65,6 +63,8 @@ impl Genoasm {
                     if out == expected {
                         continue;
                     }
+                } else {
+                    continue;
                 }
 
                 changed = false;
@@ -118,16 +118,19 @@ impl Genoasm {
                     if target == i {
                         // just die instead of infinite looping
                         self.instructions[i].0[0] = Opcode::Die as u8; 
-                    }
+                        changed = true;
+                    } else if self.instructions[target].get_opcode() == Some(Opcode::Jmp) {
+                        // we have a jmp to a jmp
 
-                    if self.instructions[target].get_opcode() == Some(Opcode::Jmp) {
                         let d_offset = self.instructions[target].get_operand_imm16(1);
                         let d_target = (target + d_offset as usize + 1) % NUM_INSTRUCTIONS;       
 
                         let new_offset = (d_target.wrapping_sub(i + 1)) % NUM_INSTRUCTIONS;
+                        assert_eq!((i + new_offset + 1) % NUM_INSTRUCTIONS, d_target);
 
+                        changed |= offset != new_offset as u16;
                         self.instructions[i].set_operand_imm16(1, new_offset as u16);
-                        changed = true;
+
                     }
                 }
             }
@@ -135,10 +138,10 @@ impl Genoasm {
 
         // double check safety
         // HACK: try adn detect if original timed out here
-        if gas_limit < (in_audio.len() * 256) as u64 {
+        /*if gas_limit < (in_audio.len() * 256) as u64 {
             let out = self.feed(in_audio, in_audio2, gas_limit).0;
             assert_eq!(&out, &expected);
-        }
+        }*/
     }
 
 }
@@ -198,7 +201,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(2..=10)) {
+        for _ in 0..(1<<rng.gen_range(6..=12)) {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
@@ -234,7 +237,7 @@ impl Animal for Genoasm {
         }
 
         // mutate LUT
-        for _ in 0..64 {
+        for _ in 0..32 {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..LUT_SIZE);
