@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::similarity::{Spectrogram, ErrorVector};
+use crate::similarity::{ErrorVector, Spectrogram};
 
 pub mod genoasm;
 pub trait Animal {
@@ -18,20 +18,20 @@ pub struct AnimalInfo {
     pub parent_sims: (f64, f64),
 
     pub wins: AtomicUsize,
-    pub trials: AtomicUsize
+    pub trials: AtomicUsize,
 }
 impl AnimalInfo {
     pub fn win_rate(&self) -> f64 {
         let wins = self.wins.load(Ordering::SeqCst);
         let trials = self.trials.load(Ordering::SeqCst).max(1);
-  
+
         // wilson
         let n = trials as f64;
         let x = wins as f64 / n;
         let z = 5.0f64; // 1.96f64;
-        //(x + z.powi(2)/2.0) / (n + z.powi(2))
-        // modified- prior = p=0.1. no idea if this is sound, probably not lmao
-        (x + z.powi(2)/10.0) / (n + z.powi(2))
+                        //(x + z.powi(2)/2.0) / (n + z.powi(2))
+                        // modified- prior = p=0.1. no idea if this is sound, probably not lmao
+        (x + z.powi(2) / 10.0) / (n + z.powi(2))
     }
 }
 impl Clone for AnimalInfo {
@@ -43,9 +43,9 @@ impl Clone for AnimalInfo {
             error_vector: self.error_vector.clone(),
             gas: self.gas,
             parent_sims: self.parent_sims,
-            
+
             wins: AtomicUsize::new(self.wins.load(Ordering::SeqCst)),
-            trials: AtomicUsize::new(self.trials.load(Ordering::SeqCst))
+            trials: AtomicUsize::new(self.trials.load(Ordering::SeqCst)),
         }
     }
 }

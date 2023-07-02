@@ -14,10 +14,9 @@ pub const REG_BP: u8 = NUM_REGISTERS - 1;
 pub const AREG_REFERENCE: u8 = 0;
 pub const AREG_LUT: u8 = 1;
 
-pub const NUM_INSTRUCTIONS: usize = 4096;
+pub const NUM_INSTRUCTIONS: usize = 2048;
 pub const LUT_SIZE: usize = 256;
 pub const STACK_SIZE: usize = 256;
-
 
 #[derive(Debug, PartialEq)]
 pub enum VmRunResult {
@@ -75,7 +74,6 @@ impl VmState {
         self.areg_playheads[idx] %= self.aregs[idx].len();
     }
 
-
     fn unadvance_playhead(&mut self, idx: usize) {
         self.areg_playheads[idx] += self.aregs[idx].len() - 1;
         self.areg_playheads[idx] %= self.aregs[idx].len();
@@ -113,16 +111,17 @@ impl VmState {
         match opcode {
             Nop | Maximum => (),
 
-            Call => {
-                let prev_bp = self.get_reg(REG_BP);
+            Call | Jmp => {
 
-                self.push_stack(self.pc);
-                self.push_stack(prev_bp);
-                self.set_reg(REG_BP, self.stack_pointer);
+                if opcode == Call {
+                    let prev_bp = self.get_reg(REG_BP);
 
-                self.pc = self
-                    .pc
-                    .wrapping_add(insn.get_operand_imm16(1));
+                    self.push_stack(self.pc);
+                    self.push_stack(prev_bp);
+                    self.set_reg(REG_BP, self.stack_pointer);
+                }
+
+                self.pc = self.pc.wrapping_add_signed(insn.get_operand_imm16(1) as i16) % NUM_INSTRUCTIONS as u16;
             }
             JmpIf => {
                 let a = insn.get_operand_imm8(0);
@@ -132,7 +131,10 @@ impl VmState {
 
                 if taken {
                     // offset
-                    self.pc = self.pc.wrapping_sub(128).wrapping_add(insn.get_operand_imm8(2) as u16);
+                    self.pc = self
+                        .pc
+                        .wrapping_sub(128)
+                        .wrapping_add(insn.get_operand_imm8(2) as u16);
                 }
             }
             Const16 => {
@@ -232,7 +234,7 @@ impl VmState {
             }
 
             In => {
-                let idx = (insn.get_operand_imm8(0) % 3) as usize;  // HACK for effiency lol
+                let idx = (insn.get_operand_imm8(0) % 3) as usize; // HACK for effiency lol
                 let sample = self.aregs[idx][self.areg_playheads[idx]];
                 if insn.get_operand_imm8(2) & 0x1 == 0x1 {
                     self.unadvance_playhead(idx);
@@ -260,10 +262,10 @@ impl VmState {
                 let (hi, lo) = if insn.get_operand_imm8(2) & 0x1 == 0x1 {
                     ((pos >> 16) as u16, pos as u16)
                 } else {
-                    let pos = (pos as f64 / self.aregs[idx].len() as f64 * u32::MAX as f64).floor() as u32;
+                    let pos = (pos as f64 / self.aregs[idx].len() as f64 * u32::MAX as f64).floor()
+                        as u32;
                     ((pos >> 16) as u16, pos as u16)
                 };
-        
 
                 self.set_reg(REG_ACCUMULATOR, hi);
                 self.set_reg(insn.get_operand_imm8(1), lo);
@@ -276,27 +278,27 @@ impl VmState {
                 let imm = insn.get_operand_imm8(2);
 
                 if imm & 0x1 == 0 {
-                    let q = (val as f64 / u16::MAX as f64 * self.aregs[idx].len() as f64).floor() as usize;
+                    let q = (val as f64 / u16::MAX as f64 * self.aregs[idx].len() as f64).floor()
+                        as usize;
                     self.areg_playheads[idx] = q;
                 } else {
                     self.areg_playheads[idx] =
                         (self.areg_playheads[idx] + val) % self.aregs[idx].len();
                 }
-            },
+            }
             Die => {
                 res = VmRunResult::Stop;
-            },
+            }
             Filter => {
                 let imm = insn.get_operand_imm8(0);
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
 
-                self.burn_gas(kernel_size as u64 / 8);
+                self.burn_gas(kernel_size as u64 * 2 / 3);
 
                 let audio_idx = 3; // always out tbh // (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
                 let mut audio = Vec::new();
                 std::mem::swap(&mut audio, &mut self.aregs[audio_idx]); // this will cause problems later
-
 
                 let kernel_idx = 2; // always LUT tbh (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
                 let kernel = &self.aregs[kernel_idx];
@@ -309,9 +311,9 @@ impl VmState {
                     kernel_playhead = (kernel_playhead + kernel.len() - 11) % kernel.len();
                     audio_playhead = (audio_playhead + 1) % audio.len();
 
-                    audio[audio_playhead] += kernel[kernel_playhead] * scale;
+                    audio[audio_playhead] +=
+                        (((kernel[kernel_playhead] as i32) * (scale as i32)) >> 16) as i16;
                 }
-
 
                 std::mem::swap(&mut audio, &mut self.aregs[audio_idx]);
 
@@ -324,9 +326,10 @@ impl VmState {
         res
     }
 
-    pub fn gas_remaining(&self) -> u64 { self.gas }
+    pub fn gas_remaining(&self) -> u64 {
+        self.gas
+    }
 }
-
 
 pub enum Flag {
     Equal = 0,
@@ -340,6 +343,7 @@ pub enum Flag {
 pub enum Opcode {
     Nop,
 
+    Jmp,
     JmpIf,
 
     Const16, // REG_A = IMM16_B
@@ -369,8 +373,8 @@ pub enum Opcode {
     Die, // stop program
 
     Filter, // set accumulator to the convolution of the next IMM8_A samples from AREG_B (at playhead) w/ next samples from AREG_C
-    
-    Maximum
+
+    Maximum,
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize, Eq)]
@@ -380,7 +384,7 @@ impl PartialEq for Instruction {
         match self.get_opcode() {
             // die and nop take no args, so just cmp opcode
             Some(Opcode::Die | Opcode::Nop) => (self.get_opcode() == other.get_opcode()),
-            _ => self.0 == other.0
+            _ => self.0 == other.0,
         }
     }
 }
@@ -389,7 +393,7 @@ impl std::hash::Hash for Instruction {
         match self.get_opcode() {
             // die and nop take no args, so just cmp opcode
             Some(Opcode::Die | Opcode::Nop) => (self.get_opcode().hash(state)),
-            _ => self.0.hash(state)
+            _ => self.0.hash(state),
         };
     }
 }
@@ -406,15 +410,28 @@ impl Instruction {
             match op {
                 Nop => writeln!(writer, "nop"),
                 //Jmp => writeln!(writer, "jmp\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
-                Call => writeln!(writer, "call\t\t{:04x}", addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16),
-                JmpIf => writeln!(writer, "jif\t\t{:02x},\t{:02x},\t{:02x}", self.0[1], self.0[2], addr.wrapping_add(self.get_operand_imm8(2) as u16) % NUM_INSTRUCTIONS as u16),
-                
-                Const16 => writeln!(writer,
+                Call => writeln!(
+                    writer,
+                    "call\t\t{:04x}",
+                    addr.wrapping_add(self.get_operand_imm16(1)) % NUM_INSTRUCTIONS as u16
+                ),
+                JmpIf => writeln!(
+                    writer,
+                    "jif\t\t{:02x},\t{:02x},\t{:02x}",
+                    self.0[1],
+                    self.0[2],
+                    addr.wrapping_add(self.get_operand_imm8(2) as u16) % NUM_INSTRUCTIONS as u16
+                ),
+
+                Const16 => writeln!(
+                    writer,
                     "const\t\t{},\t{:04x}",
                     self.get_operand_reg_name(0),
-                    self.get_operand_imm16(1)),
+                    self.get_operand_imm16(1)
+                ),
 
-                Out => writeln!(writer,
+                Out => writeln!(
+                    writer,
                     "out\t\t{},\tA{},\t{}",
                     self.get_operand_reg_name(1),
                     3, // HACK FIXED AUDIO OUT, AUDIO FUCKER DISASSEMBLE CORRECTLY
@@ -422,11 +439,20 @@ impl Instruction {
                         "stop"
                     } else {
                         "wrap"
-                    }),
-                op => writeln!(writer, "{:?}\t\t{:02x},\t{:02x},\t{:02x}", op, self.0[1], self.0[2], self.0[3])
+                    }
+                ),
+                op => writeln!(
+                    writer,
+                    "{:?}\t\t{:02x},\t{:02x},\t{:02x}",
+                    op, self.0[1], self.0[2], self.0[3]
+                ),
             }?;
         } else {
-            writeln!(writer, "ill_({:02x})\t\t{:02x}\t{:02x}\t{:02x}", self.0[0], self.0[1], self.0[2], self.0[3])?;
+            writeln!(
+                writer,
+                "ill_({:02x})\t\t{:02x}\t{:02x}\t{:02x}",
+                self.0[0], self.0[1], self.0[2], self.0[3]
+            )?;
         }
 
         Ok(())
@@ -439,7 +465,7 @@ impl Instruction {
     }
 
     pub fn get_opcode(&self) -> Option<Opcode> {
-        FromPrimitive::from_u8( (self.0[0]) % Opcode::Maximum as u8)
+        FromPrimitive::from_u8((self.0[0]) % Opcode::Maximum as u8)
     }
 
     pub fn get_operand_imm8(&self, idx: u8) -> u8 {

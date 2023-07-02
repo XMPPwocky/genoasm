@@ -1,25 +1,35 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
-use std::{time::Instant, io::Write};
+use std::{io::Write, time::Instant};
 
-use std::collections::{VecDeque, HashSet, HashMap};
 use animal::{genoasm, Animal};
-use tui::{widgets::{Dataset, Chart, Block, GraphType, Axis, Paragraph, Wrap, Borders, Gauge}, symbols, style::{Style, Color, Modifier}, text::{Span, Spans}, layout::{Alignment, Layout, Direction, Constraint}};
-use rand::{Rng, seq::IteratorRandom};
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use rand::{seq::IteratorRandom, Rng};
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering::SeqCst;
-use flate2::Compression;
-use flate2::write::GzEncoder;
+use tui::{
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    symbols,
+    text::{Span, Spans},
+    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Paragraph, Wrap},
+};
 
-use tracing::{debug};
+use tracing::debug;
 const TABOO_LEN: usize = 256;
 
 const SAMPLE_RATE: f32 = 22050.0; // 44100.0;
 
 use util::normalize_audio;
 
-use crate::similarity::{spectrogram_error_vector, Spectrogram, ErrorVector};
-use crate::{similarity::{compute_spectrogram, compare_spectrograms}, animal::{genoasm::Genoasm, AnimalInfo}};
+use crate::similarity::{spectrogram_error_vector, ErrorVector, Spectrogram};
+use crate::vm::NUM_INSTRUCTIONS;
+use crate::{
+    animal::{genoasm::Genoasm, AnimalInfo},
+    similarity::{compare_spectrograms, compute_spectrogram},
+};
 
 pub mod animal;
 pub mod corrupt;
@@ -45,7 +55,6 @@ struct Args {
     #[arg(short, long)]
     best_output: Option<String>,
 
-
     /// Number of Eves (spontaneously generated individuals)
     #[arg(short, long, default_value_t = 3)]
     num_eves: u32,
@@ -59,7 +68,7 @@ struct Args {
     generations: usize,
 
     /// Min difference between parent and child.
-    /// 
+    ///
     /// This probably should be higher for longer inputs...
     #[arg(short, long, default_value_t = 0.0)]
     parent_child_diff: f64,
@@ -70,9 +79,9 @@ struct Args {
 
     /// Attenuates genoASM's tendency to prefer lower-loss parents
     /// when generating children. (i.e. higher explore = less preference for low-loss parents)
-    /// 
+    ///
     /// range: 0..+inf, though 0..1.0 is probably best
-    /// 
+    ///
     /// extremely low (i.e. much less than 0.1)
     /// values may cause slightly noticeable CPU usage because of the use of
     /// rejection sampling
@@ -89,23 +98,29 @@ struct Args {
 struct Stats {
     trials_count: AtomicUsize,
 
-    taboo_rejects_count: AtomicUsize
+    taboo_rejects_count: AtomicUsize,
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
-    /*const SCREEN_LEN: usize = 512;
-    let (v, _) = gen.feed(&[0x0; SCREEN_LEN], None, 512*256);
-    //if v_gas < 1024 { return false; }
+    const SCREEN_LEN: usize = 4096;
+    let gas_limit = SCREEN_LEN as u64 * 512;
 
-    if v.iter().skip(SCREEN_LEN/2).filter(|&&x| x != 0).count() < SCREEN_LEN/2 { return false; }
+    let (v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
+    if v_gas < 4096 { return false; }
 
-    let (v2, _) = gen.feed(&[0x42; SCREEN_LEN], Some(&[0x7734; SCREEN_LEN]));
+    if v.iter().skip(SCREEN_LEN/2).filter(|&&x| x != 0).count() < SCREEN_LEN/4 { return false; }
+
+    let (v2, _) = gen.feed(&[0x42; SCREEN_LEN], None, gas_limit);
     if v == v2 {
         return false;
     }
 
-    et v3 = gen.feed(&[0x13; 1024]);
-    if v3 == v2 { return false; }*/
+
+    let (v3, _) = gen.feed(&[0x7714; SCREEN_LEN], Some(&[0x7734; SCREEN_LEN]), gas_limit);
+    if v == v3 {
+        return false;
+    }
+
     true
 }
 fn main() -> color_eyre::Result<()> {
@@ -131,7 +146,7 @@ fn main() -> color_eyre::Result<()> {
 
     let stats = Stats {
         trials_count: AtomicUsize::new(0),
-        taboo_rejects_count: AtomicUsize::new(0)
+        taboo_rejects_count: AtomicUsize::new(0),
     };
 
     let seed: Result<Vec<i16>, _> = {
@@ -147,7 +162,6 @@ fn main() -> color_eyre::Result<()> {
     let mut real_planner = RealFftPlanner::<f32>::new();
     let r2c = real_planner.plan_fft_forward(args.fft_size);
 
-
     let seed = normalize_audio(&seed?);
     let seed_spec = compute_spectrogram(&seed, &*r2c);
 
@@ -158,34 +172,36 @@ fn main() -> color_eyre::Result<()> {
         //j = m;
         //if rng.gen_bool(0.5) { j = m; }
 
-       //if i % 22050 < 8192 {
+        //if i % 22050 < 8192 {
         //    noisy_seed.push(j);
         //} else {
-            noisy_seed.push(rng.gen());
-//}
+        noisy_seed.push(rng.gen());
+        //}
         ////noisy_seed.push(rng.gen());
     }
-
-
 
     //let noisy_seed = mix_audio(&seed, &noise, 0.1);
     let noisy_seed = normalize_audio(&noisy_seed);
     let noisy_seed_spec = compute_spectrogram(&noisy_seed, &*r2c);
-    let noisy_seed_err = spectrogram_error_vector(&seed_spec,& noisy_seed_spec);
+    let noisy_seed_err = spectrogram_error_vector(&seed_spec, &noisy_seed_spec);
     let f = noisy_seed_err.sum();
 
-    let gas_limit = 48 * seed.len() as u64;
+    let gas_limit = 96 * seed.len() as u64;
     let noisy_seed_info = AnimalInfo {
-        cost: f, audio: noisy_seed.clone(), spectrogram: noisy_seed_spec,
-        parent_sims: (0.0, 0.0),
+        cost: f,
+        audio: noisy_seed.clone(),
+        spectrogram: noisy_seed_spec,
+        parent_sims: (f64::INFINITY, f64::INFINITY),
         error_vector: noisy_seed_err,
-        wins: AtomicUsize::new(0), trials: AtomicUsize::new(0), gas: gas_limit };
+        wins: AtomicUsize::new(0),
+        trials: AtomicUsize::new(0),
+        gas: gas_limit,
+    };
 
     let mut eve;
     debug!("Generating Eve(s)");
 
     terminal.clear()?;
-
 
     for i in 0..args.num_eves {
         debug!("{i}/{} Eves", args.num_eves);
@@ -211,7 +227,7 @@ fn main() -> color_eyre::Result<()> {
         let (aud, gas) = eve.feed(&noisy_seed, None, gas_limit);
         let spec = compute_spectrogram(&aud, &*r2c);
         let e = spectrogram_error_vector(&spec, &noisy_seed_info.spectrogram);
-        let f = e.sum() * (1.0+1.0);
+        let f = e.sum() * 1.0;
         let info = AnimalInfo {
             cost: f,
             error_vector: e,
@@ -219,7 +235,8 @@ fn main() -> color_eyre::Result<()> {
             parent_sims: (0.0, 0.0),
             gas,
             audio: aud,
-            wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
+            wins: AtomicUsize::new(0),
+            trials: AtomicUsize::new(0),
         };
         population.push((eve.clone(), info));
     }
@@ -234,18 +251,22 @@ fn main() -> color_eyre::Result<()> {
 
     const NUM_ALL_STARS: usize = 2048;
     let mut all_stars = VecDeque::with_capacity(NUM_ALL_STARS);
+    all_stars.extend(eves.iter().cloned());
 
     let mut f_history = vec![];
     let mut a_history = vec![];
-    let mut global_error = ErrorVector(std::iter::repeat(0.0).take(population[0].1.error_vector.len()).collect::<Vec<_>>());
+    let mut global_error = ErrorVector::ones(population[0].1.error_vector.len());
+    global_error.normalize();
 
     for current_generation in 0..args.generations {
-         
-        if rng.gen_bool(0.00001) {
+        if rng.gen_bool(0.0005) {
             // Meteor strike!
             taboo.clear();
             taboo.extend(
-                population.drain(..).map(|(_animal, info)| info.spectrogram).take(TABOO_LEN)
+                population
+                    .drain(..)
+                    .map(|(_animal, info)| info.spectrogram)
+                    .take(TABOO_LEN),
             );
             population = eves.clone();
         }
@@ -267,14 +288,29 @@ fn main() -> color_eyre::Result<()> {
             });
         }
 
-        
-        let best = population.iter()
+        /*{
+            let x = &mut population[0];
+
+            x.0.simplify(&x.1.audio, x.1.gas, &noisy_seed, None);
+        }*/
+
+        let best = population
+            .iter()
             .enumerate()
-            .max_by(|a,b| (a.1.1.error_vector.sum().partial_cmp(&b.1.1.error_vector.sum()).unwrap())).unwrap().0;
+            .max_by(|a, b| {
+                (a.1 .1
+                    .error_vector
+                    .sum()
+                    .partial_cmp(&b.1 .1.error_vector.sum())
+                    .unwrap())
+            })
+            .unwrap()
+            .0;
 
         if population[best].1.error_vector.sum() < best_cost {
             if let Some(best_dir) = args.best_output.as_ref() {
-                let path = std::path::PathBuf::from(best_dir).join(format!("{}.wav", current_generation));
+                let path =
+                    std::path::PathBuf::from(best_dir).join(format!("{}.wav", current_generation));
 
                 let mut bw = hound::WavWriter::create(path, spec)?;
 
@@ -283,7 +319,8 @@ fn main() -> color_eyre::Result<()> {
                 }
                 bw.finalize()?;
 
-                let path = std::path::PathBuf::from(best_dir).join(format!("{}.dna", current_generation));
+                let path =
+                    std::path::PathBuf::from(best_dir).join(format!("{}.dna", current_generation));
                 let mut f_raw = std::io::BufWriter::new(std::fs::File::create(path)?);
                 let mut f = GzEncoder::new(f_raw, Compression::default());
                 for (i, insn) in population[0].0.instructions.iter().enumerate() {
@@ -293,64 +330,71 @@ fn main() -> color_eyre::Result<()> {
                 for elem in population[0].0.lut.iter() {
                     f.write_all(&elem.to_le_bytes())?;
                 }
-                f.finish()?;   
-            }
-            {
-                let x = &mut population[best];
-
-                x.0.simplify(&x.1.audio, x.1.gas, &noisy_seed, None);
+                f.finish()?;
             }
             best_cost = population[best].1.error_vector.sum();
             last_best_time = Instant::now();
 
             if all_stars.len() == NUM_ALL_STARS {
                 let idx = rng.gen_range(0..all_stars.len());
-                all_stars[idx] = population[best].clone();
+                all_stars[idx] = population[0].clone(); // yes 0
             } else {
-                all_stars.push_back(population[best].clone());
+                all_stars.push_back(population[0].clone());
             }
 
-            if taboo.len() >= TABOO_LEN { taboo.pop_back(); }
-            //taboo.push_front(population[0].1.spectrogram.clone());
+            if taboo.len() >= TABOO_LEN {
+                taboo.pop_back();
+            }
+            taboo.push_front(population[0].1.spectrogram.clone());
             // if the best is more like the worst than anything taboo, taboo it.
             /*let taboo_sim = taboo.iter()
-                .map(|x| compare_spectrograms(&population[0].1.spectrogram, x))
-                .min_by(|x, y| x.partial_cmp(y).unwrap())
-                .unwrap_or(std::f64::INFINITY);*/
+            .map(|x| compare_spectrograms(&population[0].1.spectrogram, x))
+            .min_by(|x, y| x.partial_cmp(y).unwrap())
+            .unwrap_or(std::f64::INFINITY);*/
 
             //if taboo_sim >= compare_spectrograms(&population[0].1.spectrogram, &population[population.len() - 1].1.spectrogram) {
-               // taboo.push_front(population[0].1.spectrogram.clone());
-                /*population.retain(|(animal, info)| {
-                    compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::max(info.parent_sims.0, info.parent_sims.1)
-                });
-                while population.len() < 32 {
-                    let h = rng.gen_range(0..eves.len());
-                    population.push(eves[h].clone());
-                }*/
-                //population.drain(1..population.len() / 4); // kill all but the best rockstars
-                //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores 
+            // taboo.push_front(population[0].1.spectrogram.clone());
+            population.retain(|(animal, info)| {
+                compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
+            });
+            while population.len() < 32 {
+                let h = rng.gen_range(0..eves.len());
+                population.push(eves[h].clone());
+            }
+            //population.drain(1..population.len() / 4); // kill all but the best rockstars
+            //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores
             //}
-
-          
         }
+
+        let best = population
+            .iter()
+            .enumerate()
+            .max_by(|a, b| {
+                (a.1 .1
+                    .error_vector
+                    .sum()
+                    .partial_cmp(&b.1 .1.error_vector.sum())
+                    .unwrap())
+            })
+            .unwrap()
+            .0;
 
         let cutoff = population[population.len() - 1].1.cost;
 
         let mut gen_error = population[0].1.error_vector.clone();
-        for (_animal, info) in &population[1..population.len() / 4] {
+        for (_animal, info) in &population[1..population.len()] {
             gen_error += &info.error_vector;
         }
         gen_error.normalize();
-        gen_error.scale(0.1);
-        global_error.scale(0.9);
+        gen_error.scale(0.0005);
+        global_error.scale(0.9995);
         global_error += &gen_error;
-
+        
 
         for (_animal, info) in &mut population {
-            info.cost = info.error_vector.dot(&global_error);
+            info.cost = info.error_vector.dot(&global_error) + info.error_vector.sum() * 0.5;
         }
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-
 
         debug!("Generation {:?}", current_generation);
 
@@ -366,118 +410,140 @@ fn main() -> color_eyre::Result<()> {
             let noisy_seed = &noisy_seed;
             let global_error = &global_error;
 
-
-            let similarity_range = compare_spectrograms(&population[0].1.spectrogram, &population[population.len() /4 ].1.spectrogram);
             rayon::scope(move |s| {
-                for _ in 0..512 {
+                for _ in 0..256 {
                     let m_tx = tx.clone();
-        
+
                     s.spawn(move |_| {
                         let mut rng = rand::thread_rng();
-                            let (mut gen, par_info, par2_info) = {
-                                let mut v = &population[0];
-                                if rng.gen_bool((1.0 - (0.95f64.powi(taboo.len() as i32 + 1))).clamp(0.0, 0.25)) {
-                                    // use an all-star
-                                    v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
-                                } else {
-                                    for _ in 0..128 {
-                                        let idx = rng.gen_range(0..population.len());
-                                        v = &population[idx];
-                                        if rng.gen_bool((idx as f64 / (population.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
-                                            continue;
-                                        }
-                                        break;
+                        let (mut gen, par_info, par2_info) = {
+                            let mut v = &population[0];
+                            if rng.gen_bool(
+                                (0.1)
+                            ) {
+                                // use an all-star
+                                v = all_stars
+                                    .iter()
+                                    .choose(&mut rng)
+                                    .expect("no all-stars? hey now");
+                            } else {
+                                for _ in 0..128 {
+                                    let idx = rng.gen_range(0..population.len());
+                                    v = &population[idx];
+                                    if rng.gen_bool(
+                                        (idx as f64 / (population.len() as f64 + 1.0))
+                                            .powf(args.explore)
+                                            * (1.0 - v.1.win_rate()),
+                                    ) {
+                                        continue;
                                     }
+                                    break;
                                 }
-                                let (eve, eve_info) = v;
+                            }
+                            let (eve, eve_info) = v;
 
-                                if rng.gen_bool(0.05) {
-                                    // use an all-star
-                                    v = all_stars.iter().choose(&mut rng).expect("no all-stars? hey now");
-                                } else {
-                                    for _ in 0..128 {
-                                        let idx = rng.gen_range(0..population.len());
-                                        v = &population[idx];
-                                        if rng.gen_bool((idx as f64 / (population.len() as f64 + 1.0)).powf(args.explore)  * (1.0 - v.1.win_rate())) {
-                                            continue;
-                                        }
-                                        break;
+                            if rng.gen_bool(0.05) {
+                                // use an all-star
+                                v = all_stars
+                                    .iter()
+                                    .choose(&mut rng)
+                                    .expect("no all-stars? hey now");
+                            } else {
+                                for _ in 0..128 {
+                                    let idx = rng.gen_range(0..population.len());
+                                    v = &population[idx];
+                                    if rng.gen_bool(
+                                        (idx as f64 / (population.len() as f64 + 1.0))
+                                            .powf(args.explore)
+                                            * (1.0 - v.1.win_rate()),
+                                    ) {
+                                        continue;
                                     }
+                                    break;
                                 }
+                            }
 
-                                let (adam,  adam_info) = v;
+                            let (adam, adam_info) = v;
 
-                                let (eve_info, adam_info, eve) = if rng.gen_bool(0.02) {
-                                    (eve_info, noisy_seed_info, eve.mutate().befriend(&Animal::spontaneous_generation()))
-                                } else {
-                                    (eve_info, adam_info, eve.befriend(adam).mutate())
-                                };
-
-                                (eve, eve_info, adam_info)
+                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.02) {
+                                (
+                                    eve_info,
+                                    noisy_seed_info,
+                                    eve.mutate().befriend(&Animal::spontaneous_generation()),
+                                )
+                            } else {
+                                (eve_info, adam_info, eve.befriend(adam).mutate())
                             };
 
-                            stats.trials_count.fetch_add(1, SeqCst);
-                            
-                            par_info.trials.fetch_add(1, Ordering::SeqCst);
-                            //par2_info.trials.fetch_add(1, Ordering::SeqCst);
+                            (eve, eve_info, adam_info)
+                        };
 
-                            if !screen(&gen) {
-                                return;
+                        stats.trials_count.fetch_add(1, SeqCst);
+
+                        par_info.trials.fetch_add(1, Ordering::SeqCst);
+                        par2_info.trials.fetch_add(1, Ordering::SeqCst);
+
+                        if !screen(&gen) {
+                            return;
+                        }
+
+                        //let audio_parent = &population[best].1.audio;
+
+                        /*if current_generation < 1024 {
+                            gen.lut.iter_mut().for_each(|x| *x = 0);
+                            gen.lut[0] = 32767;
+                        }*/
+                        let (aud, gas) = gen.feed(&par_info.audio,Some(&par2_info.audio), gas_limit); //&audio_parent, Some(&par2_info.audio));
+                                                                                // silly hack....
+                                                                                //if aud[aud.len() - 1] == 0 { return; }
+
+                        let spec = compute_spectrogram(&aud, r2c);
+
+                        let (sim1, sim2) = (
+                            compare_spectrograms(&spec, &par_info.spectrogram),
+                            compare_spectrograms(&spec, &par2_info.spectrogram),
+                        );
+
+                        let e = spectrogram_error_vector(&spec, seed_spec);
+                        let f = e.dot(global_error) + e.sum() * 0.5;
+                        let info = AnimalInfo {
+                            cost: f,
+                            error_vector: e,
+                            parent_sims: (sim1, sim2),
+                            gas,
+                            audio: aud,
+                            spectrogram: spec,
+                            wins: AtomicUsize::new(0),
+                            trials: AtomicUsize::new(0),
+                        };
+                        if f64::min(sim1, sim2) > args.parent_child_diff && f < cutoff {
+                            // regardless of taboo, credit parent(s)
+                            // medidate on min/max switch here
+                            if f < f64::min(par_info.cost, par2_info.cost) {
+                                par_info.wins.fetch_add(1, Ordering::SeqCst);
+                                par2_info.wins.fetch_add(1, Ordering::SeqCst);
                             }
 
-                            //let audio_parent = &population[0].1.audio;
+                            let taboo_sim = taboo
+                                .iter()
+                                .map(|x| compare_spectrograms(&info.spectrogram, x))
+                                .min_by(|x, y| x.partial_cmp(y).unwrap())
+                                .unwrap_or(std::f64::INFINITY);
 
-                            if current_generation < 1024 {
-                                gen.lut.iter_mut().for_each(|x| *x = 0)
+                            // a
+                            if taboo_sim < f64::min(sim1, sim2) {
+                                stats.taboo_rejects_count.fetch_add(1, SeqCst);
+                            } else {
+                                m_tx.send((gen, info)).unwrap();
                             }
-                            let (aud, gas) = gen.feed(noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
-                            // silly hack....
-                            //if aud[aud.len() - 1] == 0 { return; }
-                            
-                            let spec = compute_spectrogram(&aud, r2c);
-
-                            let (sim1, sim2) = (compare_spectrograms(&spec, &par_info.spectrogram)
-                                ,compare_spectrograms(&spec, &par2_info.spectrogram)); 
-
-                            let e = spectrogram_error_vector(&spec, seed_spec);
-                            let f = e.dot(global_error);
-                            let info = AnimalInfo {
-                                cost: f,
-                                error_vector: e,
-                                parent_sims: (sim1, sim2),
-                                gas,
-                                audio: aud,
-                                spectrogram: spec,
-                                wins: AtomicUsize::new(0), trials: AtomicUsize::new(0)
-                            };
-                            if f64::min(sim1, sim2) > args.parent_child_diff && f < cutoff {
-                                // regardless of taboo, credit parent(s)
-                                // medidate on min/max switch here
-                                if f < f64::max(par_info.cost, par2_info.cost) {
-                                    par_info.wins.fetch_add(1, Ordering::SeqCst);
-                                    //par2_info.wins.fetch_add(1, Ordering::SeqCst);
-                                }
-
-                                let taboo_sim = taboo.iter()
-                                    .map(|x| compare_spectrograms(&info.spectrogram, x))
-                                    .min_by(|x, y| x.partial_cmp(y).unwrap())
-                                    .unwrap_or(std::f64::INFINITY);
-                    
-                                // a
-                                if taboo_sim < f64::max(sim1, sim2) {
-                                    stats.taboo_rejects_count.fetch_add(1, SeqCst);
-                                } else {
-                                    m_tx.send((gen, info)).unwrap();
-                                }
-                            }
+                        }
                     })
                 }
             });
         }
 
         for (animal, info) in rx.iter() {
-            let pos = population
-                .partition_point(|x| x.1.cost < info.cost);
+            let pos = population.partition_point(|x| x.1.cost < info.cost);
             if pos == population.len() {
                 continue; // obsoleted by a previous find this generation
             }
@@ -490,25 +556,31 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-        let mut seens: HashMap<Box<[vm::Instruction; 4096]>, usize>= HashMap::new();
+        let mut seens: HashMap<Box<[vm::Instruction; NUM_INSTRUCTIONS]>, usize> = HashMap::new();
 
         // perf: goofy clone here
         for (i, elem) in population.iter().enumerate() {
             if let Some(&prev) = seens.get(&elem.0.instructions) {
-               // b will die!
+                // b will die!
                 // add its stats to a's, so they may live on
                 // i think this will lose info still if there's more than 2 "same-bucket" things in garbo
                 // we shouldn't use dedup_by like this
                 // but it's better than nothing
-                population[prev].1.trials.fetch_add(elem.1.trials.load(Ordering::SeqCst), Ordering::SeqCst);
-                population[prev].1.wins.fetch_add(elem.1.wins.load(Ordering::SeqCst), Ordering::SeqCst); 
+                population[prev]
+                    .1
+                    .trials
+                    .fetch_add(elem.1.trials.load(Ordering::SeqCst), Ordering::SeqCst);
+                population[prev]
+                    .1
+                    .wins
+                    .fetch_add(elem.1.wins.load(Ordering::SeqCst), Ordering::SeqCst);
             } else {
                 seens.insert(elem.0.instructions.clone(), i);
             }
         }
         let mut ugh = 0;
         population.retain(|elem| {
-            let agh = ugh; 
+            let agh = ugh;
             ugh = ugh + 1;
             seens.get(&elem.0.instructions) == Some(&agh)
         });
@@ -536,47 +608,66 @@ fn main() -> color_eyre::Result<()> {
         let (annoying_gen, annoying_max) = a_history[a_history.len().saturating_sub(8192)];
         let chart_loss = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
-            .x_axis(Axis::default()
-                .title(Span::styled("Generation", Style::default().fg(Color::Magenta)))
-                .style(Style::default().fg(Color::White))
-                .bounds([annoying_gen as f64, current_generation as f64]))
-            .y_axis(Axis::default()
-                .title(Span::styled("Loss", Style::default().fg(Color::Magenta)))
-                .style(Style::default().fg(Color::White))
-                .bounds([f_history[f_history.len() - 1].1, annoying_max]));
+            .x_axis(
+                Axis::default()
+                    .title(Span::styled(
+                        "Generation",
+                        Style::default().fg(Color::Magenta),
+                    ))
+                    .style(Style::default().fg(Color::White))
+                    .bounds([annoying_gen as f64, current_generation as f64]),
+            )
+            .y_axis(
+                Axis::default()
+                    .title(Span::styled("Loss", Style::default().fg(Color::Magenta)))
+                    .style(Style::default().fg(Color::White))
+                    .bounds([f_history[f_history.len() - 1].1, annoying_max]),
+            );
 
-                let data = population.iter().enumerate().map(|(i, x)| (i as f64, x.1.win_rate())).collect::<Vec<_>>();
+        let data = population
+            .iter()
+            .enumerate()
+            .map(|(i, x)| (i as f64, x.1.win_rate()))
+            .collect::<Vec<_>>();
 
-                let max_wr = data.iter().cloned().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap().1;
-                let datasets = vec![
-                    Dataset::default()
-                        .name("log winrate")
-                        .marker(symbols::Marker::Braille)
-                        .graph_type(GraphType::Line)
-                        .style(Style::default().fg(Color::LightCyan))
-                        .data(&data)
-                ];
-                let chart_winrate = Chart::new(datasets)
-                    .block(Block::default().title("WINRATE").borders(Borders::ALL))
-                    .x_axis(Axis::default()
-                        .title(Span::styled("Rank", Style::default().fg(Color::LightRed)))
-                        .style(Style::default().fg(Color::White))
-                        .bounds([0.0, population.len() as f64]))
-                    .y_axis(Axis::default()
-                        .title(Span::styled("Winrate", Style::default().fg(Color::LightRed)))
-                        .style(Style::default().fg(Color::White))
-                        .bounds([0.0, max_wr]));
-        
-
+        let max_wr = data
+            .iter()
+            .cloned()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .unwrap()
+            .1;
+        let datasets = vec![Dataset::default()
+            .name("log winrate")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::LightCyan))
+            .data(&data)];
+        let chart_winrate = Chart::new(datasets)
+            .block(Block::default().title("WINRATE").borders(Borders::ALL))
+            .x_axis(
+                Axis::default()
+                    .title(Span::styled("Rank", Style::default().fg(Color::LightRed)))
+                    .style(Style::default().fg(Color::White))
+                    .bounds([0.0, population.len() as f64]),
+            )
+            .y_axis(
+                Axis::default()
+                    .title(Span::styled(
+                        "Winrate",
+                        Style::default().fg(Color::LightRed),
+                    ))
+                    .style(Style::default().fg(Color::White))
+                    .bounds([0.0, max_wr]),
+            );
 
         terminal.clear()?;
         // inexcusable to just have this ,, sitting here in the main loop lmao
         terminal.draw(|f| {
             let time_since_last_best = Instant::now().duration_since(last_best_time).as_secs_f32();
-            // FIXME: colorize ^ 
+            // FIXME: colorize ^
 
             let size = f.size();
-    
+
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Min(0), Constraint::Percentage(33)].as_ref())
@@ -584,7 +675,7 @@ fn main() -> color_eyre::Result<()> {
 
             let chunks_bar = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(6+2), Constraint::Min(0)].as_ref())
+                .constraints([Constraint::Length(6 + 2), Constraint::Min(0)].as_ref())
                 .split(chunks[1]);
 
             let chunks_graph = Layout::default()
@@ -592,29 +683,36 @@ fn main() -> color_eyre::Result<()> {
                 .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)].as_ref())
                 .split(chunks[0]);
 
-
             let text = vec![
                 Spans::from(vec![
                     Span::styled("geno", Style::default().fg(Color::LightBlue)),
-                    Span::styled("ASM", Style::default().fg(Color::Green))
+                    Span::styled("ASM", Style::default().fg(Color::Green)),
                 ]),
                 Spans::from(vec![
                     Span::styled("ver: 0.13-", Style::default()),
-                    Span::styled("CNIDARIA", Style::default().fg(Color::LightYellow).add_modifier(Modifier::ITALIC)),
+                    Span::styled(
+                        "CNIDARIA",
+                        Style::default()
+                            .fg(Color::LightYellow)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
                 ]),
                 Spans::from(vec![
                     Span::styled("another bad ", Style::default()),
                     Span::styled("mimir", Style::default().fg(Color::LightCyan)),
                     Span::styled(" idea", Style::default()),
                 ]),
-                Spans::from(Span::styled("no copyright intended", Style::default().add_modifier(Modifier::ITALIC))),
-
-                Spans::from(vec![
-                    Span::styled("questions?", Style::default()),
-                ]),
-                Spans::from(vec![
-                    Span::styled("mimir@xmppwocky.net", Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)),
-                ]),
+                Spans::from(Span::styled(
+                    "no copyright intended",
+                    Style::default().add_modifier(Modifier::ITALIC),
+                )),
+                Spans::from(vec![Span::styled("questions?", Style::default())]),
+                Spans::from(vec![Span::styled(
+                    "mimir@xmppwocky.net",
+                    Style::default()
+                        .fg(Color::LightCyan)
+                        .add_modifier(Modifier::BOLD),
+                )]),
             ];
             let para1 = Paragraph::new(text)
                 .block(Block::default().title("ABOUT").borders(Borders::ALL))
@@ -622,71 +720,104 @@ fn main() -> color_eyre::Result<()> {
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: true });
 
+            let label_style = Style::default().fg(Color::Gray);
+            let text = vec![
+                Spans::from(vec![
+                    Span::styled("mode: ", label_style),
+                    Span::styled(
+                        "mimicSpectra",
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(Color::DarkGray),
+                    ),
+                ]),
+                Spans::from(Span::raw(format!(
+                    "gen. {}/{}",
+                    current_generation, args.generations
+                ))),
+                Spans::from(vec![
+                    Span::styled("least unfit: ", label_style),
+                    Span::styled(
+                        format!("{:1.8e}", population[0].1.cost),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("25th %ile unfit: ", label_style),
+                    // fixme: calc 50th %ile loss and save it separately
+                    // instead of exponentiating the log-loss in ahistory
+                    Span::styled(
+                        format!("{:1.8e}", a_history[a_history.len() - 1].1.exp()),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("best gas: ", label_style),
+                    // fixme: calc 50th %ile loss and save it separately
+                    // instead of exponentiating the log-loss in ahistory
+                    Span::styled(
+                        format!("{}", population[0].1.gas),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("time since last best: ", label_style),
+                    Span::styled(
+                        format!("{:6.1}s", time_since_last_best),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("num. threads: ", label_style),
+                    Span::styled(
+                        format!("{}", rayon::current_num_threads()),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("num. trials: ", label_style),
+                    Span::styled(
+                        format!("{}", stats.trials_count.load(SeqCst)),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("num. animals: ", label_style),
+                    Span::styled(
+                        format!("{}", population.len()),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("num. taboos: ", label_style),
+                    Span::styled(
+                        format!("{}", taboo.len()),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("taboo rejects: ", label_style),
+                    Span::styled(
+                        format!("{}", stats.taboo_rejects_count.load(SeqCst)),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Spans::from(vec![
+                    Span::styled("vibe alignment: ", label_style),
+                    Span::styled(
+                        "void",
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(Color::Magenta),
+                    ),
+                ]),
+            ];
+            let para2 = Paragraph::new(text)
+                .block(Block::default().title("STATS").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White).bg(Color::Black))
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true });
 
-                let label_style = Style::default().fg(Color::Gray);
-                let text = vec![
-                    Spans::from(vec![
-                        Span::styled("mode: ", label_style),
-                        Span::styled("mimicSpectra", Style::default().add_modifier(Modifier::BOLD).fg(Color::DarkGray))
-                    ]),
-
-                    Spans::from(Span::raw(format!("gen. {}/{}", current_generation, args.generations))),
-                    Spans::from(vec![
-                        Span::styled("least unfit: ", label_style),
-                        Span::styled(format!("{:1.8e}", population[0].1.cost), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-    
-                    Spans::from(vec![
-                        Span::styled("25th %ile unfit: ", label_style),
-                        // fixme: calc 50th %ile loss and save it separately
-                        // instead of exponentiating the log-loss in ahistory
-                        Span::styled(format!("{:1.8e}", a_history[a_history.len() - 1].1.exp()), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-
-                    Spans::from(vec![
-                        Span::styled("time since last best: ", label_style),
-                        Span::styled(format!("{:6.1}s", time_since_last_best), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-
-                    Spans::from(vec![
-                        Span::styled("num. threads: ", label_style),
-                        Span::styled(format!("{}", rayon::current_num_threads()), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-
-                    Spans::from(vec![
-                        Span::styled("num. trials: ", label_style),
-                        Span::styled(format!("{}", stats.trials_count.load(SeqCst)), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-
-                    Spans::from(vec![
-                        Span::styled("num. animals: ", label_style),
-                        Span::styled(format!("{}", population.len()), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-
-                    Spans::from(vec![
-                        Span::styled("num. taboos: ", label_style),
-                        Span::styled(format!("{}", taboo.len()), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-                        
-
-                    Spans::from(vec![
-                        Span::styled("taboo rejects: ", label_style),
-                        Span::styled(format!("{}", stats.taboo_rejects_count.load(SeqCst)), Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-
-                    Spans::from(vec![
-                        Span::styled("vibe alignment: ", label_style),
-                        Span::styled("void", Style::default().add_modifier(Modifier::BOLD).fg(Color::Magenta))
-                    ]),
-    
-                ];
-                let para2 = Paragraph::new(text)
-                    .block(Block::default().title("STATS").borders(Borders::ALL))
-                    .style(Style::default().fg(Color::White).bg(Color::Black))
-                    .alignment(Alignment::Center)
-                    .wrap(Wrap { trim: true });
-    
-                
             f.render_widget(chart_loss, chunks_graph[0]);
             f.render_widget(chart_winrate, chunks_graph[1]);
             f.render_widget(para1, chunks_bar[0]);

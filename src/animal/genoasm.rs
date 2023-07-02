@@ -18,7 +18,9 @@ impl Genoasm {
 
         let mut aregs: [Vec<i16>; NUM_REGISTERS as usize] = Default::default();
         aregs[0] = audio.to_vec();
-        aregs[1] = audio2.map(|aud2| aud2.to_vec()).unwrap_or_else(|| audio.to_vec());
+        aregs[1] = audio2
+            .map(|aud2| aud2.to_vec())
+            .unwrap_or_else(|| audio.to_vec());
         aregs[2] = self.lut.to_vec();
         aregs[3] = out_areg;
 
@@ -38,22 +40,27 @@ impl Genoasm {
         let f = normalize_audio(&vm.aregs[3]); // useless clone lol
         (
             f,
-            gas_limit - vm.gas_remaining() // hack dont scale this here you doof
+            gas_limit - vm.gas_remaining(),
         )
     }
 
-    pub fn simplify(&mut self, expected: &[i16], gas_limit: u64, in_audio: &[i16], in_audio2: Option<&[i16]>) {
+    pub fn simplify(
+        &mut self,
+        expected: &[i16],
+        gas_limit: u64,
+        in_audio: &[i16],
+        in_audio2: Option<&[i16]>,
+    ) {
         assert_eq!(expected.len(), in_audio.len());
-        
+
         let old_instructions = self.instructions.clone();
 
-        
-        let mut block_size = 64;
+        /*let mut block_size = 64;
 
         while block_size > 0 {
             for i in (0..self.instructions.len()).step_by(block_size) {
                 let mut changed = false;
-                for j in i..(i+block_size).clamp(0, self.instructions.len()) {
+                for j in i..(i + block_size).clamp(0, self.instructions.len()) {
                     changed |= self.instructions[j].get_opcode() != Some(Opcode::Die);
                     self.instructions[j].0[0] = Opcode::Die as u8;
                 }
@@ -67,16 +74,16 @@ impl Genoasm {
                     continue;
                 }
                 // revert
-                for j in i..(i+block_size).clamp(0, self.instructions.len()) {
+                for j in i..(i + block_size).clamp(0, self.instructions.len()) {
                     self.instructions[j].0[0] = old_instructions[j].0[0];
                 }
             }
 
             block_size /= 2;
-        }
+        }*/
 
-       /*  // unsled NOPs
-        let mut streak = 0;
+        // unsled NOPs
+        /*let mut streak = 0;
         for i in 0..self.instructions.len() {
             if self.instructions[i].0[0] == Opcode::Nop as u8 {
                 streak += 1;
@@ -93,8 +100,8 @@ impl Genoasm {
         }*/
 
         // jump forwarding
-        /* 
-        let mut changed = true;
+
+        /*let mut changed = true;
         while changed {
             changed = false;
 
@@ -104,13 +111,13 @@ impl Genoasm {
                     let target = (i + offset as usize + 1) % NUM_INSTRUCTIONS;
                     if target == i {
                         // just die instead of infinite looping
-                        self.instructions[i].0[0] = Opcode::Die as u8; 
+                        self.instructions[i].0[0] = Opcode::Die as u8;
                         changed = true;
                     } else if self.instructions[target].get_opcode() == Some(Opcode::Jmp) {
                         // we have a jmp to a jmp
 
                         let d_offset = self.instructions[target].get_operand_imm16(1);
-                        let d_target = (target + d_offset as usize + 1) % NUM_INSTRUCTIONS;       
+                        let d_target = (target + d_offset as usize + 1) % NUM_INSTRUCTIONS;
 
                         let new_offset = (d_target.wrapping_sub(i + 1)) % NUM_INSTRUCTIONS;
                         assert_eq!((i + new_offset + 1) % NUM_INSTRUCTIONS, d_target);
@@ -130,7 +137,6 @@ impl Genoasm {
             assert_eq!(&out, &expected);
         }*/
     }
-
 }
 
 const MAGICS: &[u8] = &[0u8, 1, 2, 3, 4, 0x7F, 0x80, 0xFF];
@@ -172,12 +178,18 @@ impl Animal for Genoasm {
 
         for _ in 0..6 {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
-            let insn_splice_len = rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(4..9);
+            let insn_splice_len =
+                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(4..9);
 
-            let spin = if rng.gen_bool(0.95) { 0 } else { rng.gen_range(0..NUM_INSTRUCTIONS) };
+            let spin = if rng.gen_bool(0.95) {
+                0
+            } else {
+                rng.gen_range(0..NUM_INSTRUCTIONS)
+            };
 
             for i in 0..insn_splice_len {
-                instructions[insn_split_point + i] = instructions[(insn_split_point + spin + i) % NUM_INSTRUCTIONS];
+                instructions[insn_split_point + i] =
+                    instructions[(insn_split_point + spin + i) % NUM_INSTRUCTIONS];
             }
         }
         Genoasm { instructions, lut }
@@ -188,14 +200,14 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1<<rng.gen_range(3..=9)) {
+        for _ in 0..(1 << rng.gen_range(1..7)) {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(1..4);
                     let shift = rng.gen_range(0..8);
                     ant.instructions[idx].0[offset] ^= 1 << shift;
-                },
+                }
                 1 => {
                     // randomize u8 or use magic
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
@@ -206,10 +218,10 @@ impl Animal for Genoasm {
                         MAGICS[rng.gen_range(0..MAGICS.len())]
                     };
                     ant.instructions[idx].0[offset] = new;
-                },
+                }
                 2 => {
                     // randomize opcode
-                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS); 
+                    let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     ant.instructions[idx].0[0] = rng.gen_range(0..=Opcode::Filter as u8);
                 }
                 _ => {
