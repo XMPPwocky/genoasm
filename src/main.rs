@@ -345,15 +345,17 @@ fn main() -> color_eyre::Result<()> {
             if taboo.len() >= TABOO_LEN {
                 taboo.pop_back();
             }
-            taboo.push_front(population[best].1.spectrogram.clone());
+
+            let spec = population[best].1.spectrogram.clone();
 
             population.retain(|(_animal, info)| {
-                compare_spectrograms(&taboo[best], &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
+                compare_spectrograms(&spec, &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
             });
             while population.len() < 32 {
                 let h = rng.gen_range(0..eves.len());
                 population.push(eves[h].clone());
             }
+            taboo.push_front(spec);
             //population.drain(1..population.len() / 4); // kill all but the best rockstars
             //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores
             //}
