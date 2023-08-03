@@ -110,6 +110,8 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
     let (v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
     if v_gas < 4096 { return false; }
 
+    /* 
+
     if v.iter().skip(SCREEN_LEN/2).filter(|&&x| x != 0).count() < SCREEN_LEN/4 { return false; }
 
     let (v2, _) = gen.feed(&[0x42; SCREEN_LEN], None, gas_limit);
@@ -121,7 +123,7 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
     let (v3, _) = gen.feed(&[0x7714; SCREEN_LEN], Some(&[0x7734; SCREEN_LEN]), gas_limit);
     if v == v3 {
         return false;
-    }
+    }*/
 
     true
 }
