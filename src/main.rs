@@ -371,7 +371,7 @@ fn main() -> color_eyre::Result<()> {
             /*for (_animal, info) in &population[1..population.len()] {
                 gen_error += &info.error_vector;
             }*/
-            //gen_error.normalize();
+            gen_error.normalize();
             gen_error.scale(0.005);
             global_error.scale(0.995);
             global_error += &gen_error;
