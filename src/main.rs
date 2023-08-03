@@ -387,9 +387,10 @@ fn main() -> color_eyre::Result<()> {
 
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
+                let wr_mod = (animal.1.win_rate() * 0.5) + 0.5;
                 (1.0 - (idx as f64 / (population.len() as f64 + 1.0))
                                             .powf(args.explore))
-                                            * animal.1.win_rate()
+                                            * wr_mod
             }).collect::<Vec<_>>();
         let windex = WeightedIndex::new(&weights).unwrap();
 
