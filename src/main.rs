@@ -469,7 +469,7 @@ fn main() -> color_eyre::Result<()> {
                             return;
                         }
 
-                        let (aud, gas) = gen.feed(noisy_seed,None, gas_limit); //&audio_parent, Some(&par2_info.audio));
+                        let (aud, gas) = gen.feed(&par2_info.audio, Some(&par_info.audio), gas_limit); //&audio_parent, Some(&par2_info.audio));
                                                                                 // silly hack....
                                                                                 //if aud[aud.len() - 1] == 0 { return; }
 
