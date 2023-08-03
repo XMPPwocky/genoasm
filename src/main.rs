@@ -347,7 +347,7 @@ fn main() -> color_eyre::Result<()> {
             }
             taboo.push_front(population[0].1.spectrogram.clone());
 
-            population.retain(|(animal, info)| {
+            population.retain(|(_animal, info)| {
                 compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
             });
             while population.len() < 32 {
