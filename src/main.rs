@@ -552,7 +552,7 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-        f_history.push((current_generation as f64, population[best].1.cost.ln()));
+        f_history.push((current_generation as f64, best_cost));
 
         // secretly upper 25th %ile now :U
         let avg = population[population.len() / 4].1.cost;
