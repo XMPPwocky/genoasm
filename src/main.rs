@@ -365,14 +365,14 @@ fn main() -> color_eyre::Result<()> {
         let cutoff = population[population.len() - 1].1.cost;
 
         let mut gen_error = population[0].1.error_vector.clone();
-        for (_animal, info) in &population[1..population.len()] {
+        /*for (_animal, info) in &population[1..population.len()] {
             gen_error += &info.error_vector;
-        }
+        }*/
         //gen_error.normalize();
         gen_error.scale(0.005);
         global_error.scale(0.995);
         global_error += &gen_error;
-        global_error.normalize();
+        //global_error.normalize();
         
 
         for (_animal, info) in &mut population {
@@ -400,7 +400,7 @@ fn main() -> color_eyre::Result<()> {
 
                     s.spawn(move |_| {
                         let mut rng = rand::thread_rng();
-                        let (mut gen, par_info, par2_info) = {
+                        let (gen, par_info, par2_info) = {
                             let mut v = &population[0];
                             if taboo.is_empty() && rng.gen_bool(
                                 0.05

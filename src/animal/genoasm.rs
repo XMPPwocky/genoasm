@@ -55,7 +55,7 @@ impl Genoasm {
 
         let old_instructions = self.instructions.clone();
 
-        /*let mut block_size = 64;
+        let mut block_size = 64;
 
         while block_size > 0 {
             for i in (0..self.instructions.len()).step_by(block_size) {
@@ -80,10 +80,10 @@ impl Genoasm {
             }
 
             block_size /= 2;
-        }*/
+        }
 
         // unsled NOPs
-        /*let mut streak = 0;
+        let mut streak = 0;
         for i in 0..self.instructions.len() {
             if self.instructions[i].0[0] == Opcode::Nop as u8 {
                 streak += 1;
@@ -97,7 +97,7 @@ impl Genoasm {
                 }
                 streak = 0;
             }
-        }*/
+        }
 
         // jump forwarding
 
