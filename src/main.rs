@@ -260,7 +260,6 @@ fn main() -> color_eyre::Result<()> {
     let mut f_history = vec![];
     let mut a_history = vec![];
     let mut global_error = ErrorVector::ones(population[0].1.error_vector.len());
-    global_error.scale(1e-6);
     //global_error.normalize();
 
     for current_generation in 0..args.generations {
