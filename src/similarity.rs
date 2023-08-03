@@ -32,16 +32,16 @@ fn a_weight(hz: f32) -> f32 {
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
     let mut spectrums = vec![];
 
+
+    let mut indata = r2c.make_input_vec();
+    let mut spectrum = r2c.make_output_vec();
+
     // keep track of the area of each band
     // so we can normalize later
     let mut band_area = vec![0.0; NUM_BANDS];
     for i in 0..r2c.len() {
-        band_area[bin_to_band(i, r2c.len())] += 1.0;
+        band_area[bin_to_band(i, r2c.complex_len())] += 1.0;
     }
-
-    let mut indata = r2c.make_input_vec();
-
-    let mut spectrum = r2c.make_output_vec();
 
     for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 3) {
         let spec_start = spectrums.len();
