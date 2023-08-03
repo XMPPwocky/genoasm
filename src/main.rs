@@ -197,6 +197,7 @@ fn main() -> color_eyre::Result<()> {
         spectrogram: noisy_seed_spec,
         parent_sims: (f64::INFINITY, f64::INFINITY),
         error_vector: noisy_seed_err,
+        error_vector_sum: f,
         wins: AtomicUsize::new(0),
         trials: AtomicUsize::new(0),
         gas: gas_limit,
@@ -231,10 +232,11 @@ fn main() -> color_eyre::Result<()> {
         let (aud, gas) = eve.feed(&noisy_seed, None, gas_limit);
         let spec = compute_spectrogram(&aud, &*r2c);
         let e = spectrogram_error_vector(&spec, &noisy_seed_info.spectrogram);
-        let f = e.sum() * 1.0;
+        let f = e.sum();
         let info = AnimalInfo {
             cost: f,
             error_vector: e,
+            error_vector_sum: f,
             spectrogram: spec,
             parent_sims: (0.0, 0.0),
             gas,
@@ -482,10 +484,12 @@ fn main() -> color_eyre::Result<()> {
                         );
 
                         let e = spectrogram_error_vector(&spec, seed_spec);
-                        let f = e.dot(global_error) + e.sum();
+                        let e_sum = e.sum();
+                        let f = e.dot(global_error) + e_sum;
                         let info = AnimalInfo {
                             cost: f,
                             error_vector: e,
+                            error_vector_sum: e_sum,
                             parent_sims: (sim1, sim2),
                             gas,
                             audio: aud,
@@ -496,7 +500,7 @@ fn main() -> color_eyre::Result<()> {
                         if f64::min(sim1, sim2) > args.parent_child_diff && f < cutoff {
                             // regardless of taboo, credit parent(s)
                             // medidate on min/max switch here
-                            if f < f64::min(par_info.cost, par2_info.cost) {
+                            if e_sum < f64::min(par_info.error_vector_sum, par2_info.error_vector_sum) {
                                 par_info.wins.fetch_add(1, Ordering::SeqCst);
                                // par2_info.wins.fetch_add(1, Ordering::SeqCst);
                             }

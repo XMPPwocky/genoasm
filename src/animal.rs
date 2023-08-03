@@ -14,6 +14,7 @@ pub struct AnimalInfo {
     pub audio: Vec<i16>,
     pub spectrogram: Spectrogram,
     pub error_vector: ErrorVector,
+    pub error_vector_sum: f64,
     pub gas: u64,
     pub parent_sims: (f64, f64),
 
@@ -41,6 +42,7 @@ impl Clone for AnimalInfo {
             audio: self.audio.clone(),
             spectrogram: self.spectrogram.clone(),
             error_vector: self.error_vector.clone(),
+            error_vector_sum: self.error_vector_sum,
             gas: self.gas,
             parent_sims: self.parent_sims,
 
