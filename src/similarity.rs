@@ -91,7 +91,7 @@ pub fn compare_spectrograms_internal<'a>(
                 } else {
                     1e80
                 }*/
-            }).sum::<f64>().powi(2)
+            }).sum::<f64>()
         })
 }
 
