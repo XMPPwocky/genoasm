@@ -90,7 +90,7 @@ pub fn compare_spectrograms_internal<'a>(
                 } else {
                     1e80
                 }*/
-            }).sum()
+            }).sum::<f64>().sqrt()
         })
 }
 
