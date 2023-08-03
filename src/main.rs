@@ -256,10 +256,11 @@ fn main() -> color_eyre::Result<()> {
     let mut f_history = vec![];
     let mut a_history = vec![];
     let mut global_error = ErrorVector::ones(population[0].1.error_vector.len());
-    global_error.normalize();
+    global_error.scale(1e-6);
+    //global_error.normalize();
 
     for current_generation in 0..args.generations {
-        if rng.gen_bool(0.0005) {
+        if rng.gen_bool(0.00005) {
             // Meteor strike!
             taboo.clear();
             taboo.extend(
@@ -364,13 +365,13 @@ fn main() -> color_eyre::Result<()> {
 
         let cutoff = population[population.len() - 1].1.cost;
 
-        let mut gen_error = population[0].1.error_vector.clone();
+        let mut gen_error = population[best].1.error_vector.clone();
         /*for (_animal, info) in &population[1..population.len()] {
             gen_error += &info.error_vector;
         }*/
         //gen_error.normalize();
-        gen_error.scale(0.005);
-        global_error.scale(0.995);
+        gen_error.scale(0.05);
+        global_error.scale(0.95);
         global_error += &gen_error;
         //global_error.normalize();
         
@@ -415,7 +416,9 @@ fn main() -> color_eyre::Result<()> {
                                     let idx = rng.gen_range(0..population.len());
                                     v = &population[idx];
                                     if rng.gen_bool(
-                                        1.0 - v.1.win_rate()
+                                        (idx as f64 / (population.len() as f64 + 1.0))
+                                            .powf(args.explore)
+                                            * (1.0 - v.1.win_rate()),
                                     ) {
                                         continue;
                                     }
@@ -435,7 +438,9 @@ fn main() -> color_eyre::Result<()> {
                                     let idx = rng.gen_range(0..population.len());
                                     v = &population[idx];
                                     if rng.gen_bool(
-                                        1.0 - v.1.win_rate()
+                                        (idx as f64 / (population.len() as f64 + 1.0))
+                                            .powf(args.explore)
+                                            * (1.0 - v.1.win_rate()),
                                     ) {
                                         continue;
                                     }
