@@ -39,7 +39,7 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
     // keep track of the area of each band
     // so we can normalize later
     let mut band_area = vec![0.0; NUM_BANDS];
-    for i in 0..r2c.len() {
+    for i in 0..r2c.complex_len() {
         band_area[bin_to_band(i, r2c.complex_len())] += 1.0;
     }
 
