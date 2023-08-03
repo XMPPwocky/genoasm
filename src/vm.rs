@@ -214,8 +214,6 @@ impl VmState {
             Pop => {
                 if let Some(val) = self.pop_stack() {
                     self.set_reg(insn.get_operand_imm8(0), val);
-                } else {
-                    res = VmRunResult::Stop
                 }
             }
 

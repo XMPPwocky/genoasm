@@ -176,10 +176,10 @@ impl Animal for Genoasm {
 
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
-        for _ in 0..4 {
+        {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
             let insn_splice_len =
-                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(4..9);
+                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(0..4);
 
             let spin = if rng.gen_bool(0.95) {
                 0
