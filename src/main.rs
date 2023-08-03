@@ -411,7 +411,7 @@ fn main() -> color_eyre::Result<()> {
                                     .choose(&mut rng)
                                     .expect("no all-stars? hey now");
                             } else {
-                                for _ in 0..16 {
+                                for _ in 0..256 {
                                     let idx = rng.gen_range(0..population.len());
                                     v = &population[idx];
                                     if rng.gen_bool(
@@ -431,7 +431,7 @@ fn main() -> color_eyre::Result<()> {
                                     .choose(&mut rng)
                                     .expect("no all-stars? hey now");
                             } else {
-                                for _ in 0..16 {
+                                for _ in 0..256 {
                                     let idx = rng.gen_range(0..population.len());
                                     v = &population[idx];
                                     if rng.gen_bool(
