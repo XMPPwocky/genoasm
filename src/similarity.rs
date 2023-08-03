@@ -79,11 +79,19 @@ pub fn compare_spectrograms_internal<'a>(
 
     a.1.chunks(n_bands)
         .zip(b.1.chunks(n_bands))
-        .flat_map(|(a, b)| {
+        .map(|(a, b)| {
             a.iter().zip(b.iter()).map(|(&l, &r)| {
-                let diff = l as f64 - r as f64;
-                diff.powi(2)
-            })
+                let l_log = ((l as f64).abs() + 1.0).ln();
+                let r_log = ((r as f64).abs() + 1.0).ln();
+                
+                let diff = (l_log - r_log).abs();
+                //println!("{}", diff);
+                if diff.is_finite() {
+                    diff
+                } else {
+                    1e80
+                }
+            }).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()
         })
 }
 

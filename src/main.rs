@@ -102,7 +102,8 @@ struct Stats {
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
-    const SCREEN_LEN: usize = 4096;
+    true
+}/*     const SCREEN_LEN: usize = 4096;
     let gas_limit = SCREEN_LEN as u64 * 512;
 
     let (v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
@@ -122,7 +123,7 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
     }
 
     true
-}
+}*/
 fn main() -> color_eyre::Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -321,7 +322,7 @@ fn main() -> color_eyre::Result<()> {
 
                 let path =
                     std::path::PathBuf::from(best_dir).join(format!("{}.dna", current_generation));
-                let mut f_raw = std::io::BufWriter::new(std::fs::File::create(path)?);
+                let f_raw = std::io::BufWriter::new(std::fs::File::create(path)?);
                 let mut f = GzEncoder::new(f_raw, Compression::default());
                 for (i, insn) in population[0].0.instructions.iter().enumerate() {
                     insn.write(&mut f, i as u16)?;
@@ -337,9 +338,9 @@ fn main() -> color_eyre::Result<()> {
 
             if all_stars.len() == NUM_ALL_STARS {
                 let idx = rng.gen_range(0..all_stars.len());
-                all_stars[idx] = population[0].clone(); // yes 0
+                all_stars[idx] = population[best].clone();
             } else {
-                all_stars.push_back(population[0].clone());
+                all_stars.push_back(population[best].clone());
             }
 
             if taboo.len() >= TABOO_LEN {
@@ -385,14 +386,15 @@ fn main() -> color_eyre::Result<()> {
         for (_animal, info) in &population[1..population.len()] {
             gen_error += &info.error_vector;
         }
-        gen_error.normalize();
-        gen_error.scale(0.0005);
-        global_error.scale(0.9995);
+        //gen_error.normalize();
+        gen_error.scale(0.005);
+        global_error.scale(0.995);
         global_error += &gen_error;
+        global_error.normalize();
         
 
         for (_animal, info) in &mut population {
-            info.cost = info.error_vector.dot(&global_error) + info.error_vector.sum() * 0.5;
+            info.cost = info.error_vector.dot(&global_error) + info.error_vector.sum();
         }
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
@@ -411,15 +413,15 @@ fn main() -> color_eyre::Result<()> {
             let global_error = &global_error;
 
             rayon::scope(move |s| {
-                for _ in 0..256 {
+                for _ in 0..128 {
                     let m_tx = tx.clone();
 
                     s.spawn(move |_| {
                         let mut rng = rand::thread_rng();
                         let (mut gen, par_info, par2_info) = {
                             let mut v = &population[0];
-                            if rng.gen_bool(
-                                (0.1)
+                            if taboo.is_empty() && rng.gen_bool(
+                                0.05
                             ) {
                                 // use an all-star
                                 v = all_stars
@@ -427,7 +429,7 @@ fn main() -> color_eyre::Result<()> {
                                     .choose(&mut rng)
                                     .expect("no all-stars? hey now");
                             } else {
-                                for _ in 0..128 {
+                                for _ in 0..256 {
                                     let idx = rng.gen_range(0..population.len());
                                     v = &population[idx];
                                     if rng.gen_bool(
@@ -442,7 +444,7 @@ fn main() -> color_eyre::Result<()> {
                             }
                             let (eve, eve_info) = v;
 
-                            if rng.gen_bool(0.05) {
+                            if taboo.is_empty() && rng.gen_bool(0.05) {
                                 // use an all-star
                                 v = all_stars
                                     .iter()
@@ -487,13 +489,7 @@ fn main() -> color_eyre::Result<()> {
                             return;
                         }
 
-                        //let audio_parent = &population[best].1.audio;
-
-                        /*if current_generation < 1024 {
-                            gen.lut.iter_mut().for_each(|x| *x = 0);
-                            gen.lut[0] = 32767;
-                        }*/
-                        let (aud, gas) = gen.feed(&par_info.audio,Some(&par2_info.audio), gas_limit); //&audio_parent, Some(&par2_info.audio));
+                        let (aud, gas) = gen.feed(noisy_seed,None, gas_limit); //&audio_parent, Some(&par2_info.audio));
                                                                                 // silly hack....
                                                                                 //if aud[aud.len() - 1] == 0 { return; }
 
@@ -505,7 +501,7 @@ fn main() -> color_eyre::Result<()> {
                         );
 
                         let e = spectrogram_error_vector(&spec, seed_spec);
-                        let f = e.dot(global_error) + e.sum() * 0.5;
+                        let f = e.dot(global_error) + e.sum();
                         let info = AnimalInfo {
                             cost: f,
                             error_vector: e,
@@ -547,9 +543,10 @@ fn main() -> color_eyre::Result<()> {
             if pos == population.len() {
                 continue; // obsoleted by a previous find this generation
             }
-            if pos < population.len() && population.len() >= args.population_size {
+            if population.len() >= args.population_size {
                 population.pop().unwrap();
             }
+
             population.insert(pos, (animal, info));
         }
 

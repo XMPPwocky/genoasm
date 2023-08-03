@@ -236,7 +236,7 @@ impl Animal for Genoasm {
         }
 
         // mutate LUT
-        for _ in 0..32 {
+        for _ in 0..16 {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..LUT_SIZE);
