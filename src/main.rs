@@ -26,7 +26,7 @@ const SAMPLE_RATE: f32 = 22050.0; // 44100.0;
 
 use util::normalize_audio;
 
-use crate::similarity::{spectrogram_error_vector, ErrorVector, Spectrogram};
+use crate::similarity::{spectrogram_error_vector, ErrorVector};
 use crate::vm::NUM_INSTRUCTIONS;
 use crate::{
     animal::{genoasm::Genoasm, AnimalInfo},
@@ -351,8 +351,6 @@ fn main() -> color_eyre::Result<()> {
             if taboo.len() >= TABOO_LEN {
                 taboo.pop_back();
             }
-
-            let spec = population[best].1.spectrogram.clone();
 
             /*population.retain(|(_animal, info)| {
                 compare_spectrograms(&spec, &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
