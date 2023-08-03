@@ -535,7 +535,7 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-       /*  let mut seens: HashMap<Box<[vm::Instruction; NUM_INSTRUCTIONS]>, usize> = HashMap::new();
+         let mut seens: HashMap<Box<[vm::Instruction; NUM_INSTRUCTIONS]>, usize> = HashMap::new();
 
         // perf: goofy clone here
         for (i, elem) in population.iter().enumerate() {
@@ -556,7 +556,7 @@ fn main() -> color_eyre::Result<()> {
             } else {
                 seens.insert(elem.0.instructions.clone(), i);
             }
-        }*/
+        }
 
         f_history.push((current_generation as f64, best_cost));
 
@@ -564,12 +564,12 @@ fn main() -> color_eyre::Result<()> {
         let avg = population[population.len() / 4].1.cost;
         a_history.push((current_generation as f64, avg.ln()));
 
-        /*let mut ugh = 0;
+        let mut ugh = 0;
         population.retain(|elem| {
             let agh = ugh;
             ugh = ugh + 1;
             seens.get(&elem.0.instructions) == Some(&agh)
-        });*/
+        });
 
         let datasets = vec![
             Dataset::default()
