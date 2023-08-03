@@ -376,7 +376,7 @@ fn main() -> color_eyre::Result<()> {
         
 
         for (_animal, info) in &mut population {
-            info.cost = info.error_vector.dot(&global_error) + info.error_vector.sum();
+            info.cost = info.error_vector.dot(&global_error);// + info.error_vector.sum();
         }
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
@@ -479,7 +479,7 @@ fn main() -> color_eyre::Result<()> {
                         );
 
                         let e = spectrogram_error_vector(&spec, seed_spec);
-                        let f = e.dot(global_error) + e.sum();
+                        let f = e.dot(global_error);// + e.sum();
                         let info = AnimalInfo {
                             cost: f,
                             error_vector: e,
