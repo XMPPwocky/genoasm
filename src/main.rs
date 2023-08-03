@@ -395,7 +395,7 @@ fn main() -> color_eyre::Result<()> {
             let global_error = &global_error;
 
             rayon::scope(move |s| {
-                for _ in 0..512 {
+                for _ in 0..64 {
                     let m_tx = tx.clone();
 
                     s.spawn(move |_| {
@@ -713,12 +713,12 @@ fn main() -> color_eyre::Result<()> {
                 Spans::from(vec![
                     Span::styled("least unfit: ", label_style),
                     Span::styled(
-                        format!("{:1.8e}", population[0].1.cost),
+                        format!("{:1.8e}", best_cost),
                         Style::default().add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 Spans::from(vec![
-                    Span::styled("25th %ile unfit: ", label_style),
+                    Span::styled("25th %ile unfit-rel: ", label_style),
                     // fixme: calc 50th %ile loss and save it separately
                     // instead of exponentiating the log-loss in ahistory
                     Span::styled(
