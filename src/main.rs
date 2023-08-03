@@ -103,7 +103,7 @@ struct Stats {
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
     const SCREEN_LEN: usize = 4096;
-    let gas_limit = SCREEN_LEN as u64 * 512;
+    let gas_limit = SCREEN_LEN as u64 * 64;
 
     let (v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
     if v_gas < 4096 { return false; }
@@ -186,7 +186,7 @@ fn main() -> color_eyre::Result<()> {
     let noisy_seed_err = spectrogram_error_vector(&seed_spec, &noisy_seed_spec);
     let f = noisy_seed_err.sum();
 
-    let gas_limit = 96 * seed.len() as u64;
+    let gas_limit = 64 * seed.len() as u64;
     let noisy_seed_info = AnimalInfo {
         cost: f,
         audio: noisy_seed.clone(),
