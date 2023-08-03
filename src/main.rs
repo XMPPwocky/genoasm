@@ -4,6 +4,8 @@ use std::{io::Write, time::Instant};
 use animal::{genoasm, Animal};
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use rand::distributions::WeightedIndex;
+use rand::prelude::Distribution;
 use rand::{seq::IteratorRandom, Rng};
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
@@ -381,6 +383,14 @@ fn main() -> color_eyre::Result<()> {
         }
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
+        let weights = population.iter().enumerate()
+            .map(|(idx, animal)| {
+                (1.0 - (idx as f64 / (population.len() as f64 + 1.0))
+                                            .powf(args.explore))
+                                            * animal.1.win_rate()
+            }).collect::<Vec<_>>();
+        let windex = WeightedIndex::new(&weights).unwrap();
+
         debug!("Generation {:?}", current_generation);
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -394,6 +404,7 @@ fn main() -> color_eyre::Result<()> {
             let stats = &stats;
             let noisy_seed = &noisy_seed;
             let global_error = &global_error;
+            let windex = &windex;
 
             rayon::scope(move |s| {
                 for _ in 0..64 {
@@ -412,18 +423,7 @@ fn main() -> color_eyre::Result<()> {
                                     .choose(&mut rng)
                                     .expect("no all-stars? hey now");
                             } else {
-                                for _ in 0..256 {
-                                    let idx = rng.gen_range(0..population.len());
-                                    v = &population[idx];
-                                    if rng.gen_bool(
-                                        (idx as f64 / (population.len() as f64 + 1.0))
-                                            .powf(args.explore)
-                                            * (1.0 - v.1.win_rate()),
-                                    ) {
-                                        continue;
-                                    }
-                                    break;
-                                }
+                                v = &population[windex.sample(&mut rng)];
                             }
                             let (eve, eve_info) = v;
 
@@ -434,18 +434,7 @@ fn main() -> color_eyre::Result<()> {
                                     .choose(&mut rng)
                                     .expect("no all-stars? hey now");
                             } else {
-                                for _ in 0..256 {
-                                    let idx = rng.gen_range(0..population.len());
-                                    v = &population[idx];
-                                    if rng.gen_bool(
-                                        (idx as f64 / (population.len() as f64 + 1.0))
-                                            .powf(args.explore)
-                                            * (1.0 - v.1.win_rate()),
-                                    ) {
-                                        continue;
-                                    }
-                                    break;
-                                }
+                                v = &population[windex.sample(&mut rng)];
                             }
 
                             let (adam, adam_info) = v;
