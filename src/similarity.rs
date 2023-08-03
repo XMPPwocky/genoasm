@@ -84,7 +84,7 @@ pub fn compare_spectrograms_internal<'a>(
                 let (l, r) = (l as f64, r as f64);
                 let scale = f64::max(f64::max(l, r), 1e-10);
 
-                (l - r) / scale
+                (l - r).abs() / scale
                 //println!("{}", diff);
                 /*if diff.is_finite() {
                     diff
