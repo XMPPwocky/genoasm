@@ -355,7 +355,7 @@ fn main() -> color_eyre::Result<()> {
                 let h = rng.gen_range(0..eves.len());
                 population.push(eves[h].clone());
             }
-            taboo.push_front(spec);
+            //taboo.push_front(spec);
             //population.drain(1..population.len() / 4); // kill all but the best rockstars
             //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores
             //}
