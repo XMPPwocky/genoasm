@@ -103,7 +103,7 @@ struct Stats {
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
     const SCREEN_LEN: usize = 4096;
-    let gas_limit = SCREEN_LEN as u64 * 64;
+    let gas_limit = SCREEN_LEN as u64 * 1024;
 
     let (v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
     if v_gas < 4096 { return false; }
@@ -186,7 +186,7 @@ fn main() -> color_eyre::Result<()> {
     let noisy_seed_err = spectrogram_error_vector(&seed_spec, &noisy_seed_spec);
     let f = noisy_seed_err.sum();
 
-    let gas_limit = 64 * seed.len() as u64;
+    let gas_limit = 128 * seed.len() as u64;
     let noisy_seed_info = AnimalInfo {
         cost: f,
         audio: noisy_seed.clone(),
@@ -298,11 +298,11 @@ fn main() -> color_eyre::Result<()> {
             .iter()
             .enumerate()
             .max_by(|a, b| {
-                (a.1 .1
+                a.1 .1
                     .error_vector
                     .sum()
                     .partial_cmp(&b.1 .1.error_vector.sum())
-                    .unwrap())
+                    .unwrap()
             })
             .unwrap()
             .0;
@@ -345,10 +345,10 @@ fn main() -> color_eyre::Result<()> {
             if taboo.len() >= TABOO_LEN {
                 taboo.pop_back();
             }
-            taboo.push_front(population[0].1.spectrogram.clone());
+            taboo.push_front(population[best].1.spectrogram.clone());
 
             population.retain(|(_animal, info)| {
-                compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
+                compare_spectrograms(&taboo[best], &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
             });
             while population.len() < 32 {
                 let h = rng.gen_range(0..eves.len());
