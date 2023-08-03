@@ -351,9 +351,9 @@ fn main() -> color_eyre::Result<()> {
 
             let spec = population[best].1.spectrogram.clone();
 
-            population.retain(|(_animal, info)| {
+            /*population.retain(|(_animal, info)| {
                 compare_spectrograms(&spec, &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
-            });
+            });*/
             while population.len() < 32 {
                 let h = rng.gen_range(0..eves.len());
                 population.push(eves[h].clone());
@@ -363,6 +363,8 @@ fn main() -> color_eyre::Result<()> {
             //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores
             //}
         }
+
+
 
 
         let cutoff = population[population.len() - 1].1.cost;
@@ -413,29 +415,30 @@ fn main() -> color_eyre::Result<()> {
                     s.spawn(move |_| {
                         let mut rng = rand::thread_rng();
                         let (gen, par_info, par2_info) = {
-                            let mut v = &population[0];
-                            if taboo.is_empty() && rng.gen_bool(
+                            let v = if taboo.is_empty() && rng.gen_bool(
                                 0.05
                             ) {
                                 // use an all-star
-                                v = all_stars
+                                all_stars
                                     .iter()
                                     .choose(&mut rng)
-                                    .expect("no all-stars? hey now");
+                                    .expect("no all-stars? hey now")
                             } else {
-                                v = &population[windex.sample(&mut rng)];
-                            }
+                                &population[windex.sample(&mut rng)]
+                            };
                             let (eve, eve_info) = v;
 
-                            if taboo.is_empty() && rng.gen_bool(0.01) {
+                            let v = if taboo.is_empty() && rng.gen_bool(
+                                0.05
+                            ) {
                                 // use an all-star
-                                v = all_stars
+                                all_stars
                                     .iter()
                                     .choose(&mut rng)
-                                    .expect("no all-stars? hey now");
+                                    .expect("no all-stars? hey now")
                             } else {
-                                v = &population[windex.sample(&mut rng)];
-                            }
+                                &population[windex.sample(&mut rng)]
+                            };
 
                             let (adam, adam_info) = v;
 
