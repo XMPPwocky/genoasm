@@ -364,6 +364,23 @@ fn main() -> color_eyre::Result<()> {
             //population.drain(1..population.len() / 4); // kill all but the best rockstars
             //population.truncate(population.len() * 3 / 4); // make room for non-taboo explores
             //}
+
+            // update global error
+            let mut gen_error = population[best].1.error_vector.clone();
+
+            /*for (_animal, info) in &population[1..population.len()] {
+                gen_error += &info.error_vector;
+            }*/
+            //gen_error.normalize();
+            gen_error.scale(0.005);
+            global_error.scale(0.995);
+            global_error += &gen_error;
+            //global_error.normalize();
+            
+    
+            for (_animal, info) in &mut population {
+                info.cost = info.error_vector.dot(&global_error) * info.error_vector.sum();
+            }
         }
 
 
@@ -371,24 +388,7 @@ fn main() -> color_eyre::Result<()> {
 
         let cutoff = population[population.len() - 1].1.cost;
 
-        let mut gen_error = population[best].1.error_vector.clone();
 
-        {
-            // find standard deviation
-        }
-        /*for (_animal, info) in &population[1..population.len()] {
-            gen_error += &info.error_vector;
-        }*/
-        //gen_error.normalize();
-        gen_error.scale(0.01);
-        global_error.scale(0.99);
-        global_error += &gen_error;
-        //global_error.normalize();
-        
-
-        for (_animal, info) in &mut population {
-            info.cost = info.error_vector.dot(&global_error) * info.error_vector.sum();
-        }
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
         let weights = population.iter().enumerate()
@@ -416,7 +416,7 @@ fn main() -> color_eyre::Result<()> {
             let windex = &windex;
 
             rayon::scope(move |s| {
-                for _ in 0..64 {
+                for _ in 0..128 {
                     let m_tx = tx.clone();
 
                     s.spawn(move |_| {
