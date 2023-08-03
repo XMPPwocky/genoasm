@@ -14,7 +14,7 @@ pub const REG_BP: u8 = NUM_REGISTERS - 1;
 pub const AREG_REFERENCE: u8 = 0;
 pub const AREG_LUT: u8 = 1;
 
-pub const NUM_INSTRUCTIONS: usize = 2048;
+pub const NUM_INSTRUCTIONS: usize = 4096;
 pub const LUT_SIZE: usize = 256;
 pub const STACK_SIZE: usize = 256;
 

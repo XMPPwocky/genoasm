@@ -200,7 +200,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1 << rng.gen_range(1..5)) {
+        for _ in 0..(1 << rng.gen_range(3..9)) {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
