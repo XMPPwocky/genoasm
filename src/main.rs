@@ -102,8 +102,7 @@ struct Stats {
 }
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
-    true
-}/*     const SCREEN_LEN: usize = 4096;
+    const SCREEN_LEN: usize = 4096;
     let gas_limit = SCREEN_LEN as u64 * 512;
 
     let (v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
@@ -123,7 +122,7 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
     }
 
     true
-}*/
+}
 fn main() -> color_eyre::Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -347,14 +346,7 @@ fn main() -> color_eyre::Result<()> {
                 taboo.pop_back();
             }
             taboo.push_front(population[0].1.spectrogram.clone());
-            // if the best is more like the worst than anything taboo, taboo it.
-            /*let taboo_sim = taboo.iter()
-            .map(|x| compare_spectrograms(&population[0].1.spectrogram, x))
-            .min_by(|x, y| x.partial_cmp(y).unwrap())
-            .unwrap_or(std::f64::INFINITY);*/
 
-            //if taboo_sim >= compare_spectrograms(&population[0].1.spectrogram, &population[population.len() - 1].1.spectrogram) {
-            // taboo.push_front(population[0].1.spectrogram.clone());
             population.retain(|(animal, info)| {
                 compare_spectrograms(&taboo[0], &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
             });
@@ -367,18 +359,6 @@ fn main() -> color_eyre::Result<()> {
             //}
         }
 
-        let best = population
-            .iter()
-            .enumerate()
-            .max_by(|a, b| {
-                (a.1 .1
-                    .error_vector
-                    .sum()
-                    .partial_cmp(&b.1 .1.error_vector.sum())
-                    .unwrap())
-            })
-            .unwrap()
-            .0;
 
         let cutoff = population[population.len() - 1].1.cost;
 
@@ -429,7 +409,7 @@ fn main() -> color_eyre::Result<()> {
                                     .choose(&mut rng)
                                     .expect("no all-stars? hey now");
                             } else {
-                                for _ in 0..256 {
+                                for _ in 0..32 {
                                     let idx = rng.gen_range(0..population.len());
                                     v = &population[idx];
                                     if rng.gen_bool(
@@ -444,7 +424,7 @@ fn main() -> color_eyre::Result<()> {
                             }
                             let (eve, eve_info) = v;
 
-                            if taboo.is_empty() && rng.gen_bool(0.05) {
+                            if taboo.is_empty() && rng.gen_bool(0.01) {
                                 // use an all-star
                                 v = all_stars
                                     .iter()

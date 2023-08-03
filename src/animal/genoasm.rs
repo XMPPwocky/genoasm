@@ -176,7 +176,7 @@ impl Animal for Genoasm {
 
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
-        for _ in 0..6 {
+        for _ in 0..4 {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
             let insn_splice_len =
                 rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(4..9);
@@ -200,7 +200,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        for _ in 0..(1 << rng.gen_range(1..7)) {
+        for _ in 0..(1 << rng.gen_range(1..5)) {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
