@@ -314,7 +314,7 @@ fn main() -> color_eyre::Result<()> {
 
                 let mut bw = hound::WavWriter::create(path, spec)?;
 
-                for s in &population[0].1.audio {
+                for s in &population[best].1.audio {
                     bw.write_sample(*s)?;
                 }
                 bw.finalize()?;
@@ -323,11 +323,11 @@ fn main() -> color_eyre::Result<()> {
                     std::path::PathBuf::from(best_dir).join(format!("{}.dna", current_generation));
                 let f_raw = std::io::BufWriter::new(std::fs::File::create(path)?);
                 let mut f = GzEncoder::new(f_raw, Compression::default());
-                for (i, insn) in population[0].0.instructions.iter().enumerate() {
+                for (i, insn) in population[best].0.instructions.iter().enumerate() {
                     insn.write(&mut f, i as u16)?;
                 }
                 f.write_all(b"\n.lut_start\n")?;
-                for elem in population[0].0.lut.iter() {
+                for elem in population[best].0.lut.iter() {
                     f.write_all(&elem.to_le_bytes())?;
                 }
                 f.finish()?;
