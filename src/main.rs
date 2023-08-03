@@ -443,11 +443,11 @@ fn main() -> color_eyre::Result<()> {
 
                             let (adam, adam_info) = v;
 
-                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.02) {
+                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
                                 (
                                     eve_info,
-                                    noisy_seed_info,
-                                    eve.mutate().befriend(&Animal::spontaneous_generation()),
+                                    adam_info,
+                                    eve.mutate(),
                                 )
                             } else {
                                 (eve_info, adam_info, eve.befriend(adam).mutate())
@@ -459,7 +459,7 @@ fn main() -> color_eyre::Result<()> {
                         stats.trials_count.fetch_add(1, SeqCst);
 
                         par_info.trials.fetch_add(1, Ordering::SeqCst);
-                        par2_info.trials.fetch_add(1, Ordering::SeqCst);
+                        //par2_info.trials.fetch_add(1, Ordering::SeqCst);
 
                         if !screen(&gen) {
                             return;
@@ -493,7 +493,7 @@ fn main() -> color_eyre::Result<()> {
                             // medidate on min/max switch here
                             if f < f64::min(par_info.cost, par2_info.cost) {
                                 par_info.wins.fetch_add(1, Ordering::SeqCst);
-                                par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                               // par2_info.wins.fetch_add(1, Ordering::SeqCst);
                             }
 
                             let taboo_sim = taboo
