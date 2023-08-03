@@ -395,7 +395,7 @@ fn main() -> color_eyre::Result<()> {
             let global_error = &global_error;
 
             rayon::scope(move |s| {
-                for _ in 0..128 {
+                for _ in 0..512 {
                     let m_tx = tx.clone();
 
                     s.spawn(move |_| {
