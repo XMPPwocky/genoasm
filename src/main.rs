@@ -550,18 +550,19 @@ fn main() -> color_eyre::Result<()> {
                 seens.insert(elem.0.instructions.clone(), i);
             }
         }
+
+        f_history.push((current_generation as f64, population[best].1.cost.ln()));
+
+        // secretly upper 25th %ile now :U
+        let avg = population[population.len() / 4].1.cost;
+        a_history.push((current_generation as f64, avg.ln()));
+
         let mut ugh = 0;
         population.retain(|elem| {
             let agh = ugh;
             ugh = ugh + 1;
             seens.get(&elem.0.instructions) == Some(&agh)
         });
-
-        f_history.push((current_generation as f64, population[0].1.cost.ln()));
-
-        // secretly upper 25th %ile now :U
-        let avg = population[population.len() / 4].1.cost;
-        a_history.push((current_generation as f64, avg.ln()));
 
         let datasets = vec![
             Dataset::default()
@@ -577,7 +578,7 @@ fn main() -> color_eyre::Result<()> {
                 .style(Style::default().fg(Color::Cyan))
                 .data(&f_history),
         ];
-        let (annoying_gen, annoying_max) = a_history[a_history.len().saturating_sub(8192)];
+        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(8192)];
         let chart_loss = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(
