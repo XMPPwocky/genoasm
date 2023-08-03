@@ -63,6 +63,7 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
         for (bin, power) in power_spec.enumerate() {
             let band = bin_to_band(bin, r2c.complex_len());
             let hz = bin as f32 * (r2c.len() as f32) / SAMPLE_RATE;
+            println!("{bin} {hz}");
             spectrum_binned[band] += power * a_weight(hz) / band_area[band];
         }
     }
