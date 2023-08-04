@@ -470,7 +470,7 @@ fn main() -> color_eyre::Result<()> {
                             return;
                         }
 
-                        let (aud, gas) = gen.feed(&par2_info.audio, Some(&par_info.audio), gas_limit); //&audio_parent, Some(&par2_info.audio));
+                        let (aud, gas) = gen.feed(&noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
                                                                                 // silly hack....
                                                                                 //if aud[aud.len() - 1] == 0 { return; }
 
@@ -586,7 +586,7 @@ fn main() -> color_eyre::Result<()> {
                 .style(Style::default().fg(Color::Cyan))
                 .data(&f_history),
         ];
-        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(8192)];
+        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(2048)];
         let chart_loss = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(
