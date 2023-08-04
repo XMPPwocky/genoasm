@@ -1,7 +1,7 @@
 use core::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 
-use rand::{Rng, rngs::ThreadRng};
+use rand::{Rng, rngs::ThreadRng, distributions::WeightedIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::{animal::Animal, util::normalize_audio, vm::*};
@@ -221,8 +221,10 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
+        let windex = WeightedIndex::new(vec![1.0, 1.0, 0.5, 0.05, 0.05, 1.0]).unwrap();
+
         for _ in 0..(1 << rng.gen_range(3..9)) {
-            match rng.gen_range(0..=4) {
+            match rng.sample(&windex) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(1..4);
@@ -262,7 +264,7 @@ impl Animal for Genoasm {
                     }
                     ant.instructions[pos] = random_instruction(&mut rng);
                 }
-                _ => {
+                5 => {
                     // random operand add/sub
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(1..4);
@@ -270,6 +272,7 @@ impl Animal for Genoasm {
                     ant.instructions[idx].0[offset] =
                         ant.instructions[idx].0[offset].wrapping_add_signed(add);
                 }
+                _ => unreachable!()
             }
         }
 
