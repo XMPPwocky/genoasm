@@ -105,7 +105,7 @@ struct Stats {
 
 fn screen(gen: &genoasm::Genoasm) -> bool {
     const SCREEN_LEN: usize = 4096;
-    let gas_limit = SCREEN_LEN as u64 * 256;
+    let gas_limit = SCREEN_LEN as u64 * 96;
 
     let (_v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
     if v_gas < 4096 { return false; }
