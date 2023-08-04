@@ -394,7 +394,7 @@ fn main() -> color_eyre::Result<()> {
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
                 let wr_mod = animal.1.win_rate();
-                let gas_mod = (animal.1.gas as f64 + 1.0).powf(-1.0);
+                let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.5);
                 (1.0 - (idx as f64 / (population.len() as f64 + 1.0))
                                             .powf(args.explore))
                                             * wr_mod
