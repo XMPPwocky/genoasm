@@ -3,7 +3,7 @@ pub type Spectrogram = (usize, Vec<f32>);
 
 //const BAND_LOG: f32 = 1.618;
 
-const NUM_BANDS: usize = 24;
+const NUM_BANDS: usize = 64;
 use crate::SAMPLE_RATE;
 
 fn hz_to_mel(hz: f32) -> f32 {
