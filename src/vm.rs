@@ -49,7 +49,7 @@ impl VmState {
         byte & (1 << (pc % 8)) != 0
     }
     fn covmap_set(&mut self, pc: u16) {
-        self.covmap[(pc >> 8) as usize] |= (1 << (pc % 8));
+        self.covmap[(pc >> 8) as usize] |= 1 << (pc % 8);
     }
     pub fn new(aregs: [Vec<i16>; NUM_REGISTERS as usize], gas_limit: u64) -> Self {
         VmState {

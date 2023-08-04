@@ -550,7 +550,6 @@ fn main() -> color_eyre::Result<()> {
         //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
         let mut seens: HashMap<u64, usize> = HashMap::new();
 
-        // perf: goofy clone here
         for (i, elem) in population.iter().enumerate() {
             {
                 seens.insert(elem.1.covhash, i);

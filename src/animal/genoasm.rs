@@ -1,7 +1,7 @@
 use core::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 
-use rand::Rng;
+use rand::{Rng, rngs::ThreadRng};
 use serde::{Deserialize, Serialize};
 
 use crate::{animal::Animal, util::normalize_audio, vm::*};
@@ -154,20 +154,26 @@ impl Genoasm {
     }
 }
 
+fn random_instruction(rng: &mut ThreadRng) -> Instruction {
+    let mut insn = Instruction([0; 4]);
+    insn.0[0] = rng.gen_range(0..=Opcode::Filter as u8);
+    for q in &mut insn.0[1..] {
+        if rng.gen_bool(0.8) {
+            *q = rng.gen();
+        } else {
+            *q = MAGICS[rng.gen_range(0..MAGICS.len())];
+        }
+    }
+
+    insn
+}
 const MAGICS: &[u8] = &[0u8, 1, 2, 3, 4, 0x7F, 0x80, 0xFF];
 impl Animal for Genoasm {
     fn spontaneous_generation() -> Self {
         let mut rng = rand::thread_rng();
         let mut instructions = Box::new([Instruction([0; 4]); NUM_INSTRUCTIONS]);
         for insn in &mut *instructions {
-            insn.0[0] = rng.gen_range(0..=Opcode::Filter as u8);
-            for q in &mut insn.0[1..] {
-                if rng.gen_bool(0.8) {
-                    *q = rng.gen();
-                } else {
-                    *q = MAGICS[rng.gen_range(0..MAGICS.len())];
-                }
-            }
+            *insn = random_instruction(&mut rng);
         }
 
         let mut lut = Box::new([0; LUT_SIZE]);
@@ -216,7 +222,7 @@ impl Animal for Genoasm {
 
         // mutate instructions
         for _ in 0..(1 << rng.gen_range(3..9)) {
-            match rng.gen_range(0..=3) {
+            match rng.gen_range(0..=4) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     let offset = rng.gen_range(1..4);
@@ -238,6 +244,23 @@ impl Animal for Genoasm {
                     // randomize opcode
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
                     ant.instructions[idx].0[0] = rng.gen_range(0..=Opcode::Filter as u8);
+                },
+                3 => {
+                    // delete a random instruction
+                    let pos = rng.gen_range(0..NUM_INSTRUCTIONS - 1);
+                    for i in pos..NUM_INSTRUCTIONS - 1 {
+                        ant.instructions[i] = ant.instructions[i+1];
+                    }
+                },
+                4 => {
+                    // insert some instruction
+                    let pos = rng.gen_range(0..NUM_INSTRUCTIONS);
+                    
+                    // move instructions after pos forwards
+                    for i in (pos + 1..NUM_INSTRUCTIONS).rev() {
+                        ant.instructions[i] = ant.instructions[i - 1];
+                    }
+                    ant.instructions[pos] = random_instruction(&mut rng);
                 }
                 _ => {
                     // random operand add/sub
