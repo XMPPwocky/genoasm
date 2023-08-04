@@ -492,7 +492,7 @@ fn main() -> color_eyre::Result<()> {
                         let parent_wins = par_info.wins.load(Ordering::SeqCst) + 1;
                         let parent_trials = par_info.wins.load(Ordering::SeqCst) + 1;
                         let parent_winrate = parent_wins as f64 / parent_trials as f64;
-                        let fake_trials = (parent_trials / 3).clamp(1, 1024);
+                        let fake_trials = (parent_trials / 2).clamp(1, 1024);
                         let fake_wins = (parent_winrate * fake_trials as f64) as usize;
                         
                         let info = AnimalInfo {
