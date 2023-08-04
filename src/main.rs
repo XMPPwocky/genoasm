@@ -385,7 +385,7 @@ fn main() -> color_eyre::Result<()> {
 
 
 
-        let cutoff = population[population.len() - 1].1.cost;
+        let cutoff = population[population.len() / 2].1.cost;
 
 
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
