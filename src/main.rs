@@ -9,7 +9,7 @@ use rand::prelude::Distribution;
 use rand::{seq::IteratorRandom, Rng};
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
-use std::collections::{VecDeque};
+use std::collections::VecDeque;
 use std::sync::atomic::Ordering::SeqCst;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
@@ -394,9 +394,11 @@ fn main() -> color_eyre::Result<()> {
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
                 let wr_mod = animal.1.win_rate();
+                let gas_mod = (gas_limit as f64 + 1.0).ln() / (animal.1.gas as f64 + 1.0).ln();
                 (1.0 - (idx as f64 / (population.len() as f64 + 1.0))
                                             .powf(args.explore))
                                             * wr_mod
+                                            * gas_mod
             }).collect::<Vec<_>>();
         let windex = WeightedIndex::new(&weights).unwrap();
 
@@ -471,7 +473,7 @@ fn main() -> color_eyre::Result<()> {
                             return;
                         }
 
-                        let (aud, gas) = gen.feed(&noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
+                        let (aud, gas) = gen.feed(noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
                                                                                 // silly hack....
                                                                                 //if aud[aud.len() - 1] == 0 { return; }
 
@@ -603,7 +605,7 @@ fn main() -> color_eyre::Result<()> {
                         Style::default().fg(Color::Magenta),
                     ))
                     .style(Style::default().fg(Color::White))
-                    .bounds([annoying_gen as f64, current_generation as f64]),
+                    .bounds([annoying_gen, current_generation as f64]),
             )
             .y_axis(
                 Axis::default()
