@@ -38,10 +38,10 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
 
     // keep track of the area of each band
     // so we can normalize later
-    let mut band_area = vec![0.0; NUM_BANDS];
+    /*let mut band_area = vec![0.0; NUM_BANDS];
     for i in 0..r2c.complex_len() {
         band_area[bin_to_band(i, r2c.complex_len())] += 1.0;
-    }
+    }*/
 
     for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 3) {
         let spec_start = spectrums.len();
@@ -63,7 +63,7 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
         for (bin, power) in power_spec.enumerate() {
             let band = bin_to_band(bin, r2c.complex_len());
             let hz = bin as f32 * SAMPLE_RATE / r2c.len() as f32;
-            spectrum_binned[band] += power * a_weight(hz) / band_area[band];
+            spectrum_binned[band] += power * a_weight(hz); // / band_area[band];
         }
     }
 
