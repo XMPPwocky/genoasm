@@ -552,7 +552,7 @@ fn main() -> color_eyre::Result<()> {
 
         for (i, elem) in population.iter().enumerate() {
             {
-                seens.insert(elem.1.covhash, i);
+                seens.entry(elem.1.covhash).or_insert(i);
             }
         }
 
