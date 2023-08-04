@@ -309,7 +309,7 @@ impl VmState {
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
 
-                self.burn_gas(kernel_size as u64 * 2 / 3);
+                self.burn_gas(kernel_size as u64 / 4);
 
                 let audio_idx = 3; // always out tbh // (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
                 let mut audio = Vec::new();
