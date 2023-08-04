@@ -1,3 +1,6 @@
+use core::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +16,7 @@ pub struct Genoasm {
     pub lut: Box<[i16; LUT_SIZE]>,
 }
 impl Genoasm {
-    pub fn feed(&self, audio: &[i16], audio2: Option<&[i16]>, gas_limit: u64) -> (Vec<i16>, u64) {
+    pub fn feed(&self, audio: &[i16], audio2: Option<&[i16]>, gas_limit: u64) -> (Vec<i16>, u64, u64) {
         let out_areg: Vec<i16> = std::iter::repeat(0).take(audio.len()).collect();
 
         let mut aregs: [Vec<i16>; NUM_REGISTERS as usize] = Default::default();
@@ -36,11 +39,23 @@ impl Genoasm {
         while status == VmRunResult::Continue {
             status = vm.run_insn(&self.instructions[vm.pc as usize % NUM_INSTRUCTIONS]);
         }
+        let mut hasher = DefaultHasher::new();
+
+        for x in self.instructions.iter()
+            .cloned()
+            .enumerate()
+            .map(|(idx, insn)| {
+                if vm.covmap_get(idx as u16) { Some(insn) } else { None }
+            }) {
+                x.hash(&mut hasher);
+            }
+            
 
         let f = normalize_audio(&vm.aregs[3]); // useless clone lol
         (
             f,
             gas_limit - vm.gas_remaining(),
+            hasher.finish()
         )
     }
 

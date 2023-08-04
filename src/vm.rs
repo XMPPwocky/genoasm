@@ -15,6 +15,8 @@ pub const AREG_REFERENCE: u8 = 0;
 pub const AREG_LUT: u8 = 1;
 
 pub const NUM_INSTRUCTIONS: usize = 4096;
+pub const COVMAP_SIZE: usize = NUM_INSTRUCTIONS / 8;
+
 pub const LUT_SIZE: usize = 256;
 pub const STACK_SIZE: usize = 256;
 
@@ -38,8 +40,17 @@ pub struct VmState {
     stack_pointer: u16,
 
     gas: u64,
+
+    covmap: [u8; COVMAP_SIZE]
 }
 impl VmState {
+    pub fn covmap_get(&self, pc: u16) -> bool {
+        let byte = self.covmap[(pc >> 8) as usize];
+        byte & (1 << (pc % 8)) != 0
+    }
+    fn covmap_set(&mut self, pc: u16) {
+        self.covmap[(pc >> 8) as usize] |= (1 << (pc % 8));
+    }
     pub fn new(aregs: [Vec<i16>; NUM_REGISTERS as usize], gas_limit: u64) -> Self {
         VmState {
             pc: 0,
@@ -50,6 +61,7 @@ impl VmState {
             stack: [0; STACK_SIZE],
             stack_pointer: 0,
             gas: gas_limit,
+            covmap: [0; COVMAP_SIZE]
         }
     }
     fn burn_gas(&mut self, gas: u64) {
@@ -96,6 +108,7 @@ impl VmState {
         if self.gas == 0 {
             return VmRunResult::OutOfGas;
         }
+        self.covmap_set(self.pc);
         self.burn_gas(1);
 
         self.pc += 1;

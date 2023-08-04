@@ -20,6 +20,8 @@ pub struct AnimalInfo {
 
     pub wins: AtomicUsize,
     pub trials: AtomicUsize,
+
+    pub covhash: u64,
 }
 impl AnimalInfo {
     pub fn win_rate(&self) -> f64 {
@@ -45,6 +47,7 @@ impl Clone for AnimalInfo {
             error_vector_sum: self.error_vector_sum,
             gas: self.gas,
             parent_sims: self.parent_sims,
+            covhash: self.covhash,
 
             wins: AtomicUsize::new(self.wins.load(Ordering::SeqCst)),
             trials: AtomicUsize::new(self.trials.load(Ordering::SeqCst)),

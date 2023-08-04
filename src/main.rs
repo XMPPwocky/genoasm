@@ -9,7 +9,7 @@ use rand::prelude::Distribution;
 use rand::{seq::IteratorRandom, Rng};
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashMap};
 use std::sync::atomic::Ordering::SeqCst;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
@@ -107,7 +107,7 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
     const SCREEN_LEN: usize = 4096;
     let gas_limit = SCREEN_LEN as u64 * 96;
 
-    let (_v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
+    let (_v, v_gas, _covhash) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
     if v_gas < 4096 { return false; }
 
     /* 
@@ -201,6 +201,7 @@ fn main() -> color_eyre::Result<()> {
         wins: AtomicUsize::new(0),
         trials: AtomicUsize::new(0),
         gas: gas_limit,
+        covhash: 0
     };
 
     let mut eve;
@@ -229,7 +230,7 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-        let (aud, gas) = eve.feed(&noisy_seed, None, gas_limit);
+        let (aud, gas, covhash) = eve.feed(&noisy_seed, None, gas_limit);
         let spec = compute_spectrogram(&aud, &*r2c);
         let e = spectrogram_error_vector(&spec, &noisy_seed_info.spectrogram);
         let f = e.sum();
@@ -244,6 +245,7 @@ fn main() -> color_eyre::Result<()> {
             audio: aud,
             wins: AtomicUsize::new(0),
             trials: AtomicUsize::new(0),
+            covhash
         };
         population.push((eve.clone(), info));
     }
@@ -473,7 +475,7 @@ fn main() -> color_eyre::Result<()> {
                             return;
                         }
 
-                        let (aud, gas) = gen.feed(noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
+                        let (aud, gas, covhash) = gen.feed(noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
                                                                                 // silly hack....
                                                                                 //if aud[aud.len() - 1] == 0 { return; }
 
@@ -503,6 +505,7 @@ fn main() -> color_eyre::Result<()> {
                             spectrogram: spec,
                             wins: AtomicUsize::new(fake_wins),
                             trials: AtomicUsize::new(fake_trials),
+                            covhash
                         };
                         if f64::min(sim1, sim2) > args.parent_child_diff && f < cutoff {
                             // regardless of taboo, credit parent(s)
@@ -545,28 +548,14 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-        /*let mut seens: HashMap<Box<[vm::Instruction; NUM_INSTRUCTIONS]>, usize> = HashMap::new();
+        let mut seens: HashMap<u64, usize> = HashMap::new();
 
         // perf: goofy clone here
         for (i, elem) in population.iter().enumerate() {
-            if let Some(&prev) = seens.get(&elem.0.instructions) {
-                // b will die!
-                // add its stats to a's, so they may live on
-                // i think this will lose info still if there's more than 2 "same-bucket" things in garbo
-                // we shouldn't use dedup_by like this
-                // but it's better than nothing
-                population[prev]
-                    .1
-                    .trials
-                    .fetch_add(elem.1.trials.load(Ordering::SeqCst), Ordering::SeqCst);
-                population[prev]
-                    .1
-                    .wins
-                    .fetch_add(elem.1.wins.load(Ordering::SeqCst), Ordering::SeqCst);
-            } else {
-                seens.insert(elem.0.instructions.clone(), i);
+            {
+                seens.insert(elem.1.covhash, i);
             }
-        }*/
+        }
 
         f_history.push((current_generation as f64, best_cost));
 
@@ -574,12 +563,12 @@ fn main() -> color_eyre::Result<()> {
         let avg = population[population.len() / 4].1.cost;
         a_history.push((current_generation as f64, avg.ln()));
 
-        /*let mut ugh = 0;
+        let mut ugh = 0;
         population.retain(|elem| {
             let agh = ugh;
-            ugh = ugh + 1;
-            seens.get(&elem.0.instructions) == Some(&agh)
-        });*/
+            ugh += 1;
+            seens.get(&elem.1.covhash) == Some(&agh)
+        });
 
         let datasets = vec![
             Dataset::default()
