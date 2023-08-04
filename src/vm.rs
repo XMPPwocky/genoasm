@@ -381,7 +381,7 @@ impl PartialEq for Instruction {
     fn eq(&self, other: &Self) -> bool {
         match self.get_opcode() {
             // die and nop take no args, so just cmp opcode
-            Some(Opcode::Die | Opcode::Nop) => (self.get_opcode() == other.get_opcode()),
+            Some(Opcode::Die | Opcode::Nop) => self.get_opcode() == other.get_opcode(),
             _ => self.0 == other.0,
         }
     }
@@ -390,7 +390,7 @@ impl std::hash::Hash for Instruction {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self.get_opcode() {
             // die and nop take no args, so just cmp opcode
-            Some(Opcode::Die | Opcode::Nop) => (self.get_opcode().hash(state)),
+            Some(Opcode::Die | Opcode::Nop) => self.get_opcode().hash(state),
             _ => self.0.hash(state),
         };
     }

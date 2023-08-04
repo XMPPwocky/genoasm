@@ -9,7 +9,7 @@ use rand::prelude::Distribution;
 use rand::{seq::IteratorRandom, Rng};
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{VecDeque};
 use std::sync::atomic::Ordering::SeqCst;
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
@@ -27,7 +27,7 @@ const SAMPLE_RATE: f32 = 22050.0; // 44100.0;
 use util::normalize_audio;
 
 use crate::similarity::{spectrogram_error_vector, ErrorVector};
-use crate::vm::NUM_INSTRUCTIONS;
+
 use crate::{
     animal::{genoasm::Genoasm, AnimalInfo},
     similarity::{compare_spectrograms, compute_spectrogram},
@@ -107,7 +107,7 @@ fn screen(gen: &genoasm::Genoasm) -> bool {
     const SCREEN_LEN: usize = 4096;
     let gas_limit = SCREEN_LEN as u64 * 256;
 
-    let (v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
+    let (_v, v_gas) = gen.feed(&[0x7714; SCREEN_LEN], None, gas_limit);
     if v_gas < 4096 { return false; }
 
     /* 
@@ -405,14 +405,14 @@ fn main() -> color_eyre::Result<()> {
         let (tx, rx) = std::sync::mpsc::channel();
         {
             let population = &population;
-            let noisy_seed_info = &noisy_seed_info;
+            let _noisy_seed_info = &noisy_seed_info;
             let r2c = &*r2c;
             let all_stars = &all_stars;
             let seed_spec = &seed_spec;
             let taboo = &taboo;
             let stats = &stats;
             let noisy_seed = &noisy_seed;
-            let global_error = &global_error;
+            let _global_error = &global_error;
             let windex = &windex;
 
             rayon::scope(move |s| {
