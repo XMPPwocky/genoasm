@@ -378,9 +378,9 @@ fn main() -> color_eyre::Result<()> {
             //global_error.normalize();
             
     
-            for (_animal, info) in &mut population {
+            /*for (_animal, info) in &mut population {
                 info.cost = /*info.error_vector.dot(&global_error) + */ info.error_vector.sum();
-            }
+            }*/
         }
 
 
@@ -418,7 +418,7 @@ fn main() -> color_eyre::Result<()> {
             let windex = &windex;
 
             rayon::scope(move |s| {
-                for _ in 0..128 {
+                for _ in 0..1024 {
                     let m_tx = tx.clone();
 
                     s.spawn(move |_| {
@@ -490,7 +490,7 @@ fn main() -> color_eyre::Result<()> {
                         let parent_wins = par_info.wins.load(Ordering::SeqCst) + 1;
                         let parent_trials = par_info.wins.load(Ordering::SeqCst) + 1;
                         let parent_winrate = parent_wins as f64 / parent_trials as f64;
-                        let fake_trials = parent_trials.clamp(0, 16) / 2;
+                        let fake_trials = (parent_trials / 8).clamp(1, 1024);
                         let fake_wins = (parent_winrate * fake_trials as f64) as usize;
                         
                         let info = AnimalInfo {
