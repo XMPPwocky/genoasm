@@ -392,14 +392,12 @@ fn main() -> color_eyre::Result<()> {
 
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
-        let cost_dr = population[population.len() - 1].1.cost as f64 - population[0].1.cost as f64;
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
                 let wr_mod = animal.1.win_rate();
                 let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.5);
-                let cost_mod = (1.0 + cost_dr) / (1.0 + (animal.1.cost as f64 + 1.0) - population[0].1.cost as f64);
-                /*(1.0 - (idx as f64 / (population.len() as f64 + 1.0))
-                                            .powf(args.explore))*/
+                let cost_mod = (1.0 - (idx as f64 / (population.len() as f64 + 1.0))
+                                            .powf(args.explore));
                                             cost_mod
                                             * wr_mod
                                             * gas_mod
