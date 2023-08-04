@@ -278,7 +278,11 @@ impl VmState {
                 if imm & 0x1 == 0 {
                     let q = (val as f64 / u16::MAX as f64 * self.aregs[idx].len() as f64).floor()
                         as usize;
-                    self.areg_playheads[idx] = q;
+                    
+                    // extra bounds check with the min here - q is calculated as a float
+                    // and if we're unlucky it might be a lil bit
+                    // past the end
+                    self.areg_playheads[idx] = usize::min(q, self.aregs[idx].len());
                 } else {
                     self.areg_playheads[idx] =
                         (self.areg_playheads[idx] + val) % self.aregs[idx].len();
