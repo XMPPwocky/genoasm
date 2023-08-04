@@ -262,7 +262,7 @@ fn main() -> color_eyre::Result<()> {
     let mut f_history = vec![];
     let mut a_history = vec![];
     let mut global_error = ErrorVector::ones(population[0].1.error_vector.len());
-    //global_error.normalize();
+    global_error.normalize();
 
     for current_generation in 0..args.generations {
         if rng.gen_bool(0.00005) {
@@ -378,7 +378,7 @@ fn main() -> color_eyre::Result<()> {
             
     
             for (_animal, info) in &mut population {
-                info.cost = info.error_vector.dot(&global_error) + info.error_vector.sum();
+                info.cost = /*info.error_vector.dot(&global_error) + */ info.error_vector.sum();
             }
         }
 
@@ -483,7 +483,7 @@ fn main() -> color_eyre::Result<()> {
 
                         let e = spectrogram_error_vector(&spec, seed_spec);
                         let e_sum = e.sum();
-                        let f = e.dot(global_error) + e_sum;
+                        let f = e_sum; // e.dot(global_error) + e_sum;
                         let info = AnimalInfo {
                             cost: f,
                             error_vector: e,
