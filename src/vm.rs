@@ -282,7 +282,7 @@ impl VmState {
                     // extra bounds check with the min here - q is calculated as a float
                     // and if we're unlucky it might be a lil bit
                     // past the end
-                    self.areg_playheads[idx] = usize::min(q, self.aregs[idx].len());
+                    self.areg_playheads[idx] = usize::min(q, self.aregs[idx].len() - 1);
                 } else {
                     self.areg_playheads[idx] =
                         (self.areg_playheads[idx] + val) % self.aregs[idx].len();
