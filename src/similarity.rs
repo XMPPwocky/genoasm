@@ -83,8 +83,8 @@ pub fn compare_spectrograms_internal<'a>(
             a.iter().zip(b.iter()).map(|(&l, &r)| {
                 let (l, r) = (l as f64, r as f64);
 
-                (l - r).abs().sqrt()
-            }).sum::<f64>().powi(2)
+                (l - r).powi(2)
+            }).sum::<f64>()
         })
 }
 
