@@ -541,26 +541,28 @@ fn main() -> color_eyre::Result<()> {
         // partition_point just always screws me up w/ off-by-ones
         //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
         let mut seens: HashMap<u64, usize> = HashMap::new();
-
-        for (i, elem) in population.iter().enumerate() {
-            {
-                use std::collections::hash_map::Entry;
-                match seens.entry(elem.1.covhash) {
-                    Entry::Occupied(e) => {
-                        // we are slain!
-                        // award our better with our stats...
-                        let slayer_idx = *e.get();
-                        population[slayer_idx].1.trials.fetch_add(
-                            elem.1.trials.load(Ordering::SeqCst),
-                            Ordering::SeqCst
-                        );
-                        population[slayer_idx].1.wins.fetch_add(
-                            elem.1.wins.load(Ordering::SeqCst),
-                            Ordering::SeqCst
-                        );
-                    },
-                    Entry::Vacant(v) => {
-                        v.insert(i);
+        let pop_full = population.len() == args.population_size;
+        if pop_full {
+                for (i, elem) in population.iter().enumerate() {
+                {
+                    use std::collections::hash_map::Entry;
+                    match seens.entry(elem.1.covhash) {
+                        Entry::Occupied(e) => {
+                            // we are slain!
+                            // award our better with our stats...
+                            let slayer_idx = *e.get();
+                            population[slayer_idx].1.trials.fetch_add(
+                                elem.1.trials.load(Ordering::SeqCst),
+                                Ordering::SeqCst
+                            );
+                            population[slayer_idx].1.wins.fetch_add(
+                                elem.1.wins.load(Ordering::SeqCst),
+                                Ordering::SeqCst
+                            );
+                        },
+                        Entry::Vacant(v) => {
+                            v.insert(i);
+                        }
                     }
                 }
             }
@@ -573,11 +575,13 @@ fn main() -> color_eyre::Result<()> {
         a_history.push((current_generation as f64, avg.ln()));
 
         let mut ugh = 0;
-        population.retain(|elem| {
-            let agh = ugh;
-            ugh += 1;
-            seens.get(&elem.1.covhash) == Some(&agh)
-        });
+        if pop_full {
+            population.retain(|elem| {
+                let agh = ugh;
+                ugh += 1;
+                seens.get(&elem.1.covhash) == Some(&agh)
+            });
+        }
 
         let datasets = vec![
             Dataset::default()
