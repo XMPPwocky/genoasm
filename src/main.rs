@@ -362,7 +362,7 @@ fn main() -> color_eyre::Result<()> {
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
                 let wr_mod = animal.1.win_rate();
-                let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.5);
+                let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.25);
                 let cost_mod = (1.0 - (idx as f64 / (population.len() as f64 + 1.0))
                                             .powf(args.explore));
                                             cost_mod
@@ -457,7 +457,7 @@ fn main() -> color_eyre::Result<()> {
                         let parent_wins = par_info.wins.load(Ordering::SeqCst) + 1;
                         let parent_trials = par_info.trials.load(Ordering::SeqCst) + 1;
                         let parent_winrate = parent_wins as f64 / parent_trials as f64;
-                        let fake_trials = (parent_trials / 2).clamp(1, 1024);
+                        let fake_trials = ((parent_trials + 1) * 2 / 3).clamp(1, 1024);
                         let fake_wins = (parent_winrate * fake_trials as f64) as usize;
                         
                         let info = AnimalInfo {
