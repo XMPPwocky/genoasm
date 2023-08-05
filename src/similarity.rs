@@ -84,7 +84,7 @@ pub fn compare_spectrograms_internal<'a>(
                 let (l, r) = (l as f64, r as f64);
 
                 (l - r).abs()
-            }).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().powi(2)
+            }).sum::<f64>().powi(2)
         })
 }
 
