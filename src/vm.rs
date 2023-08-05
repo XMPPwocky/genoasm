@@ -309,12 +309,12 @@ impl VmState {
             }
             Filter => {
                 std::mem::swap(&mut self.covmap, &mut self.covmap_back);
-                
+
                 let imm = insn.get_operand_imm8(0);
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
 
-                self.burn_gas(kernel_size as u64 / 4);
+                self.burn_gas(kernel_size as u64);
 
                 let audio_idx = 3; // always out tbh // (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
                 let mut audio = Vec::new();
