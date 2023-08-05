@@ -31,7 +31,7 @@ impl AnimalInfo {
         // wilson
         let n = trials as f64;
         let x = wins as f64 / n;
-        let z = 1.96f64;
+        let z = 2.0 * 1.96f64;
                         //(x + z.powi(2)/2.0) / (n + z.powi(2))
                         // modified- prior . no idea if this is sound, probably not lmao
         (x + z.powi(2) / 10.0) / (n + z.powi(2))
