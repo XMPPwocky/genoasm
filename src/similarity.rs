@@ -82,16 +82,8 @@ pub fn compare_spectrograms_internal<'a>(
         .map(|(a, b)| {
             a.iter().zip(b.iter()).enumerate().map(|(i, (&l, &r))| {
                 let (l, r) = (l as f64, r as f64);
-                //let scale = 1.0;// f64::max(f64::max(l, r), 1e-10);
 
-                (l - r).abs() // ((l + 1e-40).ln() - (r + 1e-40).ln()).abs();
-                //println!("{}", diff)
-
-                /*if diff.is_finite() {
-                    diff
-                } else {
-                    1e20
-                }*/
+                (l - r).abs()
             }).sum::<f64>().powi(2)
         })
 }
