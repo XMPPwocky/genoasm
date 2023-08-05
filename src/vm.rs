@@ -315,7 +315,7 @@ impl VmState {
                 let mut audio = Vec::new();
                 std::mem::swap(&mut audio, &mut self.aregs[audio_idx]); // this will cause problems later
 
-                let kernel_idx = (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
+                let kernel_idx = (insn.get_operand_imm8(1) % 3) as usize;
                 let kernel = &self.aregs[kernel_idx];
 
                 let mut kernel_playhead = self.areg_playheads[kernel_idx];
