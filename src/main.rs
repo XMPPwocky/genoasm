@@ -375,7 +375,7 @@ fn main() -> color_eyre::Result<()> {
             // update costs for new error vector
     
             for (_animal, info) in &mut population {
-                info.cost = info.error_vector.dot(&global_error) * info.error_vector_sum;
+                info.cost = /* info.error_vector.dot(&global_error) * */ info.error_vector_sum;
             }
         }
 
@@ -480,7 +480,7 @@ fn main() -> color_eyre::Result<()> {
 
                         let e = spectrogram_error_vector(&spec, seed_spec);
                         let e_sum = e.sum();
-                        let f = e.dot(global_error) * e_sum;
+                        let f = /*e.dot(global_error) * */ e_sum;
                         let parent_wins = par_info.wins.load(Ordering::SeqCst) + 1;
                         let parent_trials = par_info.wins.load(Ordering::SeqCst) + 1;
                         let parent_winrate = parent_wins as f64 / parent_trials as f64;
