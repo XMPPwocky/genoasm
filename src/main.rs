@@ -539,7 +539,7 @@ fn main() -> color_eyre::Result<()> {
 
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
-        population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+        //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
         let mut seens: HashMap<u64, usize> = HashMap::new();
 
         for (i, elem) in population.iter().enumerate() {
