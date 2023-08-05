@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 pub const NUM_REGISTERS: u8 = 16;
 
-pub const REG_ZERO: u8 = 1;
+pub const REG_ZERO: u8 = 0;
 pub const REG_ACCUMULATOR: u8 = 1;
 pub const REG_BP: u8 = NUM_REGISTERS - 1;
 
