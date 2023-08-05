@@ -511,9 +511,7 @@ fn main() -> color_eyre::Result<()> {
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
-        if population.len() > args.population_size {
-            population.drain(args.population_size..);
-        }
+
         let mut seens: HashMap<u64, usize> = HashMap::new();
         let pop_full = population.len() == args.population_size;
         if pop_full {
@@ -555,6 +553,10 @@ fn main() -> color_eyre::Result<()> {
                 ugh += 1;
                 seens.get(&elem.1.covhash) == Some(&agh)
             });
+        }
+
+        if population.len() > args.population_size {
+            population.drain(args.population_size..);
         }
 
         let datasets = vec![
