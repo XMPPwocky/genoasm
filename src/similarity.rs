@@ -84,12 +84,12 @@ pub fn compare_spectrograms_internal<'a>(
                 let (l, r) = (l as f64, r as f64);
                 //let scale = 1.0;// f64::max(f64::max(l, r), 1e-10);
 
-                let diff = (l.ln() - r.ln()).abs();
+                let diff = ((l + 1e-40).ln() - (r + 1e-40).ln()).abs();
                 //println!("{}", diff);
                 if diff.is_finite() {
                     diff
                 } else {
-                    1e8
+                    1e20
                 }
             }).sum::<f64>()
         })
