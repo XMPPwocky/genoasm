@@ -34,7 +34,7 @@ impl AnimalInfo {
         let z = 1.96f64;
                         //(x + z.powi(2)/2.0) / (n + z.powi(2))
                         // modified- prior . no idea if this is sound, probably not lmao
-        (x + z.powi(2) / 200.0) / (n + z.powi(2))
+        (x + z.powi(2) / 10.0) / (n + z.powi(2))
     }
 }
 impl Clone for AnimalInfo {

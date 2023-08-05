@@ -307,15 +307,14 @@ fn main() -> color_eyre::Result<()> {
             .enumerate()
             .max_by(|a, b| {
                 a.1 .1
-                    .error_vector
-                    .sum()
-                    .partial_cmp(&b.1 .1.error_vector.sum())
+                    .error_vector_sum
+                    .partial_cmp(&b.1 .1.error_vector_sum)
                     .unwrap()
             })
             .unwrap()
             .0;
 
-        if population[best].1.error_vector.sum() < best_cost {
+        if population[best].1.error_vector_sum < best_cost {
             if let Some(best_dir) = args.best_output.as_ref() {
                 let path =
                     std::path::PathBuf::from(best_dir).join(format!("{}.wav", current_generation));
@@ -340,7 +339,7 @@ fn main() -> color_eyre::Result<()> {
                 }
                 f.finish()?;
             }
-            best_cost = population[best].1.error_vector.sum();
+            best_cost = population[best].1.error_vector_sum;
             last_best_time = Instant::now();
 
             if all_stars.len() == NUM_ALL_STARS {
@@ -577,7 +576,7 @@ fn main() -> color_eyre::Result<()> {
         f_history.push((current_generation as f64, best_cost));
 
         // secretly upper 25th %ile now :U
-        let avg = population[population.len() / 4].1.cost;
+        let avg = population[population.len() / 4].1.error_vector_sum;
         a_history.push((current_generation as f64, avg.ln()));
 
         let mut ugh = 0;
