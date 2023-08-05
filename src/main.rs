@@ -178,7 +178,7 @@ fn main() -> color_eyre::Result<()> {
         //if i % 22050 < 8192 {
         //    noisy_seed.push(j);
         //} else {
-        noisy_seed.push(rng.gen());
+        noisy_seed.push(1);
         //}
         ////noisy_seed.push(rng.gen());
     }
