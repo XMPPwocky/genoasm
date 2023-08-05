@@ -363,8 +363,8 @@ fn main() -> color_eyre::Result<()> {
             .map(|(idx, animal)| {
                 let wr_mod = animal.1.win_rate();
                 let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.25);
-                let pos_mod = (1.0 - (idx as f64 / (population.len() as f64 + 1.0))
-                                            .powf(args.explore));
+                let pos_mod = 1.0 - (idx as f64 / (population.len() as f64 + 1.0))
+                                            .powf(args.explore);
                 let cost_mod = (animal.1.cost + 1.0).powf(-1.0);
                                             pos_mod
                                             * cost_mod
@@ -505,16 +505,15 @@ fn main() -> color_eyre::Result<()> {
             if pos == population.len() {
                 continue; // obsoleted by a previous find this generation
             }
-            if population.len() >= args.population_size {
-                population.pop().unwrap();
-            }
-
             population.insert(pos, (animal, info));
         }
 
         // again there's no excuse not to do insertion sort here
         // partition_point just always screws me up w/ off-by-ones
-        //population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+        population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+        if population.len() > args.population_size {
+            population.drain(args.population_size..);
+        }
         let mut seens: HashMap<u64, usize> = HashMap::new();
         let pop_full = population.len() == args.population_size;
         if pop_full {
