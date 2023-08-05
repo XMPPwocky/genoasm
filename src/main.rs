@@ -362,7 +362,7 @@ fn main() -> color_eyre::Result<()> {
                 let h = rng.gen_range(0..eves.len());
                 population.push(eves[h].clone());
             }
-            taboo.push_front(spec);
+            //taboo.push_front(spec);
 
             // update global error
             let mut gen_error = population[best].1.error_vector.clone();
