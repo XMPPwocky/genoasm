@@ -447,7 +447,7 @@ fn main() -> color_eyre::Result<()> {
 
                             let (adam, adam_info) = v;
 
-                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
+                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.8) {
                                 (
                                     eve_info,
                                     adam_info,
@@ -470,8 +470,6 @@ fn main() -> color_eyre::Result<()> {
                         }
 
                         let (aud, gas, covhash) = gen.feed(noisy_seed, None, gas_limit); //&audio_parent, Some(&par2_info.audio));
-                                                                                // silly hack....
-                                                                                //if aud[aud.len() - 1] == 0 { return; }
 
                         let spec = compute_spectrogram(&aud, r2c);
 
