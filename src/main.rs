@@ -552,7 +552,23 @@ fn main() -> color_eyre::Result<()> {
 
         for (i, elem) in population.iter().enumerate() {
             {
-                seens.entry(elem.1.covhash).or_insert(i);
+                use std::collections::hash_map::Entry;
+                match seens.entry(elem.1.covhash) {
+                    Entry::Occupied(e) => {
+                        let slayer_idx = *e.get();
+                        population[slayer_idx].1.trials.fetch_add(
+                            elem.1.trials.load(Ordering::SeqCst),
+                            Ordering::SeqCst
+                        );
+                        population[slayer_idx].1.wins.fetch_add(
+                            elem.1.wins.load(Ordering::SeqCst),
+                            Ordering::SeqCst
+                        );
+                    },
+                    Entry::Vacant(v) => {
+                        v.insert(i);
+                    }
+                }
             }
         }
 
