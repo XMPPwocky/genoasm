@@ -305,7 +305,7 @@ fn main() -> color_eyre::Result<()> {
         let best = population
             .iter()
             .enumerate()
-            .max_by(|a, b| {
+            .min_by(|a, b| {
                 a.1 .1
                     .error_vector_sum
                     .partial_cmp(&b.1 .1.error_vector_sum)
