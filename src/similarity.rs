@@ -89,9 +89,9 @@ pub fn compare_spectrograms_internal<'a>(
                 if diff.is_finite() {
                     diff
                 } else {
-                    1e80
+                    1e8
                 }
-            }).sum::<f64>().powi(2)
+            }).sum::<f64>()
         })
 }
 
