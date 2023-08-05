@@ -323,7 +323,7 @@ impl VmState {
 
                 let scale = self.get_reg(REG_ACCUMULATOR) as i16;
                 for _ in 0..kernel_size {
-                    kernel_playhead = (kernel_playhead + kernel.len() - 11) % kernel.len();
+                    kernel_playhead = (kernel_playhead + kernel.len() - 1) % kernel.len();
                     audio_playhead = (audio_playhead + 1) % audio.len();
 
                     audio[audio_playhead] +=
