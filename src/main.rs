@@ -555,6 +555,8 @@ fn main() -> color_eyre::Result<()> {
                 use std::collections::hash_map::Entry;
                 match seens.entry(elem.1.covhash) {
                     Entry::Occupied(e) => {
+                        // we are slain!
+                        // award our better with our stats...
                         let slayer_idx = *e.get();
                         population[slayer_idx].1.trials.fetch_add(
                             elem.1.trials.load(Ordering::SeqCst),
