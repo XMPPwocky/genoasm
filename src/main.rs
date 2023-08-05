@@ -447,7 +447,7 @@ fn main() -> color_eyre::Result<()> {
 
                             let (adam, adam_info) = v;
 
-                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.8) {
+                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.5) {
                                 (
                                     eve_info,
                                     adam_info,

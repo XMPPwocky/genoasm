@@ -80,7 +80,7 @@ pub fn compare_spectrograms_internal<'a>(
     a.1.chunks(n_bands)
         .zip(b.1.chunks(n_bands))
         .map(|(a, b)| {
-            a.iter().zip(b.iter()).enumerate().map(|(i, (&l, &r))| {
+            a.iter().zip(b.iter()).map(|(&l, &r)| {
                 let (l, r) = (l as f64, r as f64);
 
                 (l - r).abs()
