@@ -523,7 +523,7 @@ fn main() -> color_eyre::Result<()> {
                         Entry::Occupied(e) => {
                             // we are slain!
                             // award our better with our stats...
-                            let slayer_idx = *e.get();
+                            /*let slayer_idx = *e.get();
                             population[slayer_idx].1.trials.fetch_add(
                                 elem.1.trials.load(Ordering::SeqCst),
                                 Ordering::SeqCst
@@ -531,7 +531,7 @@ fn main() -> color_eyre::Result<()> {
                             population[slayer_idx].1.wins.fetch_add(
                                 elem.1.wins.load(Ordering::SeqCst),
                                 Ordering::SeqCst
-                            );
+                            );*/
                         },
                         Entry::Vacant(v) => {
                             v.insert(i);
