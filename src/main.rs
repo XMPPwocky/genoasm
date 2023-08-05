@@ -447,7 +447,7 @@ fn main() -> color_eyre::Result<()> {
 
                             let (adam, adam_info) = v;
 
-                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.5) {
+                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
                                 (
                                     eve_info,
                                     adam_info,
@@ -463,7 +463,7 @@ fn main() -> color_eyre::Result<()> {
                         stats.trials_count.fetch_add(1, SeqCst);
 
                         par_info.trials.fetch_add(1, Ordering::SeqCst);
-                        //par2_info.trials.fetch_add(1, Ordering::SeqCst);
+                        par2_info.trials.fetch_add(1, Ordering::SeqCst);
 
                         if !screen(&gen) {
                             return;
@@ -482,7 +482,7 @@ fn main() -> color_eyre::Result<()> {
                         let e_sum = e.sum();
                         let f = /*e.dot(global_error) * */ e_sum;
                         let parent_wins = par_info.wins.load(Ordering::SeqCst) + 1;
-                        let parent_trials = par_info.wins.load(Ordering::SeqCst) + 1;
+                        let parent_trials = par_info.trials.load(Ordering::SeqCst) + 1;
                         let parent_winrate = parent_wins as f64 / parent_trials as f64;
                         let fake_trials = (parent_trials / 2).clamp(1, 1024);
                         let fake_wins = (parent_winrate * fake_trials as f64) as usize;
@@ -504,7 +504,7 @@ fn main() -> color_eyre::Result<()> {
                             // medidate on min/max switch here
                             if e_sum < f64::min(par_info.error_vector_sum, par2_info.error_vector_sum) {
                                 par_info.wins.fetch_add(1, Ordering::SeqCst);
-                               // par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                               par2_info.wins.fetch_add(1, Ordering::SeqCst);
                             }
 
                             let taboo_sim = taboo
