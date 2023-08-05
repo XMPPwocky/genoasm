@@ -272,6 +272,7 @@ impl Animal for Genoasm {
                     ant.instructions[idx].0[offset] =
                         ant.instructions[idx].0[offset].wrapping_add_signed(add);
                 }
+             
                 _ => unreachable!()
             }
         }

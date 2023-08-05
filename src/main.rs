@@ -8,7 +8,7 @@ use rand::distributions::WeightedIndex;
 use rand::prelude::Distribution;
 use rand::{seq::IteratorRandom, Rng};
 use rayon::prelude::*;
-use realfft::RealFftPlanner;
+use realfft::{RealFftPlanner, RealToComplex};
 use std::collections::{VecDeque, HashMap};
 use std::sync::atomic::Ordering::SeqCst;
 use tui::{
@@ -203,13 +203,12 @@ fn main() -> color_eyre::Result<()> {
         covhash: 0
     };
 
-    let mut eve;
-    debug!("Generating Eve(s)");
-
     terminal.clear()?;
 
-    for i in 0..args.num_eves {
-        debug!("{i}/{} Eves", args.num_eves);
+    population.extend(
+        generate_eves(args.num_eves, &*r2c,
+            &noisy_seed, &noisy_seed_info,
+            gas_limit, |cur_eve| {
 
         terminal.draw(|f| {
             let size = f.size();
@@ -217,38 +216,12 @@ fn main() -> color_eyre::Result<()> {
             let gauge = Gauge::default()
                 .label("Generating Eve(s)")
                 .gauge_style(Style::default().fg(Color::LightCyan).bg(Color::Black))
-                .ratio((i as f64) / args.num_eves as f64);
+                .ratio((cur_eve as f64) / args.num_eves as f64);
 
             f.render_widget(gauge, size)
-        })?;
-
-        loop {
-            eve = genoasm::Genoasm::spontaneous_generation();
-            if screen(&eve) {
-                break;
-            }
-        }
-
-        let (aud, gas, covhash) = eve.feed(&noisy_seed, None, gas_limit);
-        let spec = compute_spectrogram(&aud, &*r2c);
-        let e = spectrogram_error_vector(&spec, &noisy_seed_info.spectrogram);
-        let f = e.sum();
-        
-        let info = AnimalInfo {
-            cost: f,
-            error_vector: e,
-            error_vector_sum: f,
-            spectrogram: spec,
-            parent_sims: (0.0, 0.0),
-            gas,
-            audio: aud,
-            wins: AtomicUsize::new(0),
-            trials: AtomicUsize::new(0),
-            covhash
-        };
-        population.push((eve.clone(), info));
-    }
-
+        }).expect("TUI failed...");
+    })
+    );
     // do this up here i guess too
     population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
@@ -818,4 +791,48 @@ fn main() -> color_eyre::Result<()> {
     }
 
     Ok(())
+}
+
+
+fn generate_eves(num_eves: u32, r2c: &dyn RealToComplex<f32>,
+        noisy_seed: &[i16], noisy_seed_info: &AnimalInfo,
+        gas_limit: u64,
+        mut progress_cb: impl FnMut(u32)
+    ) -> Vec<(Genoasm, AnimalInfo)> {
+    let mut eves = Vec::with_capacity(num_eves as usize);
+
+    for i in 0..num_eves {
+        debug!("{i}/{} Eves", num_eves);
+
+        progress_cb(i);
+
+        let mut eve;
+        loop {
+            eve = genoasm::Genoasm::spontaneous_generation();
+            if screen(&eve) {
+                break;
+            }
+        }
+
+        let (aud, gas, covhash) = eve.feed(&noisy_seed, None, gas_limit);
+        let spec = compute_spectrogram(&aud, &*r2c);
+        let e = spectrogram_error_vector(&spec, &noisy_seed_info.spectrogram);
+        let f = e.sum();
+        
+        let info = AnimalInfo {
+            cost: f,
+            error_vector: e,
+            error_vector_sum: f,
+            spectrogram: spec,
+            parent_sims: (0.0, 0.0),
+            gas,
+            audio: aud,
+            wins: AtomicUsize::new(0),
+            trials: AtomicUsize::new(0),
+            covhash
+        };
+        eves.push((eve.clone(), info));
+    }
+
+    eves
 }

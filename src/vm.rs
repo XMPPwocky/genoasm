@@ -41,7 +41,8 @@ pub struct VmState {
 
     gas: u64,
 
-    covmap: [u8; COVMAP_SIZE]
+    covmap: [u8; COVMAP_SIZE],
+    covmap_back: [u8; COVMAP_SIZE],
 }
 impl VmState {
     pub fn covmap_get(&self, pc: u16) -> bool {
@@ -49,7 +50,7 @@ impl VmState {
         byte & (1 << (pc % 8)) != 0
     }
     fn covmap_set(&mut self, pc: u16) {
-        self.covmap[(pc >> 8) as usize] |= 1 << (pc % 8);
+        self.covmap_back[(pc >> 8) as usize] |= 1 << (pc % 8);
     }
     pub fn new(aregs: [Vec<i16>; NUM_REGISTERS as usize], gas_limit: u64) -> Self {
         VmState {
@@ -61,7 +62,8 @@ impl VmState {
             stack: [0; STACK_SIZE],
             stack_pointer: 0,
             gas: gas_limit,
-            covmap: [0; COVMAP_SIZE]
+            covmap: [0; COVMAP_SIZE],
+            covmap_back: [0; COVMAP_SIZE]
         }
     }
     fn burn_gas(&mut self, gas: u64) {
@@ -255,6 +257,7 @@ impl VmState {
                 self.set_reg(insn.get_operand_imm8(1), sample as u16);
             }
             Out => {
+                std::mem::swap(&mut self.covmap, &mut self.covmap_back);
                 let sample = self.get_reg(REG_ACCUMULATOR);
 
                 let idx = (insn.get_operand_imm8(0) % 4) as usize; // HACK for efficiency
@@ -305,6 +308,8 @@ impl VmState {
                 res = VmRunResult::Stop;
             }
             Filter => {
+                std::mem::swap(&mut self.covmap, &mut self.covmap_back);
+                
                 let imm = insn.get_operand_imm8(0);
                 let kernel_size = imm >> 1;
                 let incr_playhead = (imm & 1) == 1;
