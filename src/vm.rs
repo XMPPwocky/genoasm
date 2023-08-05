@@ -255,7 +255,7 @@ impl VmState {
                 self.set_reg(insn.get_operand_imm8(1), sample as u16);
             }
             Out => {
-                let sample = self.get_reg(insn.get_operand_imm8(1));
+                let sample = self.get_reg(REG_ACCUMULATOR);
 
                 let idx = (insn.get_operand_imm8(0) % 4) as usize; // HACK for efficiency
                 self.aregs[idx][self.areg_playheads[idx]] += sample as i16;
@@ -315,13 +315,13 @@ impl VmState {
                 let mut audio = Vec::new();
                 std::mem::swap(&mut audio, &mut self.aregs[audio_idx]); // this will cause problems later
 
-                let kernel_idx = 2; // always LUT tbh (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
+                let kernel_idx = (insn.get_operand_imm8(1) % NUM_REGISTERS) as usize;
                 let kernel = &self.aregs[kernel_idx];
 
                 let mut kernel_playhead = self.areg_playheads[kernel_idx];
                 let mut audio_playhead = self.areg_playheads[audio_idx];
 
-                let scale = self.get_reg(insn.get_operand_imm8(REG_ACCUMULATOR)) as i16;
+                let scale = self.get_reg(REG_ACCUMULATOR) as i16;
                 for _ in 0..kernel_size {
                     kernel_playhead = (kernel_playhead + kernel.len() - 11) % kernel.len();
                     audio_playhead = (audio_playhead + 1) % audio.len();

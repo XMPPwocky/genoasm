@@ -18,7 +18,7 @@ fn bin_to_band(bin: usize, num_bins: usize) -> usize {
 
     (pos * NUM_BANDS as f32).floor() as usize
 }
-fn a_weight(hz: f32) -> f32 {
+pub fn a_weight(hz: f32) -> f32 {
     if hz < 42.0 {
         return 0.0;
     }
@@ -80,12 +80,13 @@ pub fn compare_spectrograms_internal<'a>(
     a.1.chunks(n_bands)
         .zip(b.1.chunks(n_bands))
         .map(|(a, b)| {
-            a.iter().zip(b.iter()).map(|(&l, &r)| {
+            a.iter().zip(b.iter()).enumerate().map(|(i, (&l, &r))| {
                 let (l, r) = (l as f64, r as f64);
                 //let scale = 1.0;// f64::max(f64::max(l, r), 1e-10);
 
                 let diff = ((l + 1e-40).ln() - (r + 1e-40).ln()).abs();
-                //println!("{}", diff);
+                //println!("{}", diff)
+
                 if diff.is_finite() {
                     diff
                 } else {
