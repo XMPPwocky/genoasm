@@ -158,7 +158,7 @@ fn random_instruction(rng: &mut ThreadRng) -> Instruction {
     let mut insn = Instruction([0; 4]);
     insn.0[0] = rng.gen_range(0..=Opcode::Filter as u8);
     for q in &mut insn.0[1..] {
-        if rng.gen_bool(0.8) {
+        if rng.gen_bool(0.9) {
             *q = rng.gen();
         } else {
             *q = MAGICS[rng.gen_range(0..MAGICS.len())];
@@ -223,7 +223,7 @@ impl Animal for Genoasm {
         // mutate instructions
         let windex = WeightedIndex::new(vec![2.0, 1.0, 0.5, 0.005, 0.005, 1.0]).unwrap();
 
-        for _ in 0..(1 << rng.gen_range(8..10)) {
+        for _ in 0..(1 << rng.gen_range(2..8)) {
             match rng.sample(&windex) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
