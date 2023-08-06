@@ -189,7 +189,7 @@ fn main() -> color_eyre::Result<()> {
     let noisy_seed_err = spectrogram_error_vector(&seed_spec, &noisy_seed_spec);
     let f = noisy_seed_err.sum();
 
-    let gas_limit = 32 * seed.len() as u64;
+    let gas_limit = 128 * seed.len() as u64;
     let noisy_seed_info = AnimalInfo {
         cost: f,
         audio: noisy_seed.clone(),
