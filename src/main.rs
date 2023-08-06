@@ -223,7 +223,7 @@ fn main() -> color_eyre::Result<()> {
     })
     );
     // do this up here i guess too
-    population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+    population.par_sort_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
     let eves = population.clone();
 
@@ -352,12 +352,9 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-
-
-
         let cutoff = population[population.len() - 1].1.cost;
 
-        population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+        population.par_sort_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
@@ -474,7 +471,7 @@ fn main() -> color_eyre::Result<()> {
                             trials: AtomicUsize::new(fake_trials),
                             covhash
                         };
-                        if f64::min(sim1, sim2) > args.parent_child_diff && f < cutoff {
+                        if f64::min(sim1, sim2) > args.parent_child_diff { //&& f < cutoff {
                             // regardless of taboo, credit parent(s)
                             // medidate on min/max switch here
                             if e_sum < f64::min(par_info.error_vector_sum, par2_info.error_vector_sum) {
