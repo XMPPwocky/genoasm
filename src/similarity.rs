@@ -45,7 +45,7 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
 
     for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 3) {
         let spec_start = spectrums.len();
-        spectrums.extend(std::iter::repeat(Complex::new(0., 0.)).take(NUM_BANDS));
+        spectrums.extend(std::iter::repeat(Complex::new(0., 0.)).take(spectrum.len()));
         let spectrum_binned = &mut spectrums[spec_start..];
 
         for (i, (x, z)) in indata.iter_mut().zip(inp_chunk.iter()).enumerate() {
@@ -61,9 +61,9 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
         //let power_spec = spectrum.iter().map(|complex| complex.norm_sqr());
 
         for (bin, val) in spectrum.iter().enumerate() {
-            let band = bin_to_band(bin, r2c.complex_len());
-            //let hz = bin as f32 * SAMPLE_RATE / r2c.len() as f32;
-            spectrum_binned[band] += val; //* a_weight(hz); // / band_area[band];
+            let band = bin; //bin_to_band(bin, r2c.complex_len());
+            let hz = bin as f32 * SAMPLE_RATE / r2c.len() as f32;
+            spectrum_binned[band] += val * a_weight(hz); // / band_area[band];
         }
     }
 
