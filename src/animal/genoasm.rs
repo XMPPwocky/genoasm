@@ -45,7 +45,7 @@ impl Genoasm {
             .cloned()
             .enumerate()
             .map(|(idx, insn)| {
-                if vm.covmap_get(idx as u16)  { Some(insn.get_opcode() ) } else { None }
+                vm.covmap_get(idx as u16)//  { Some(insn.get_opcode() ) } else { None }
             }) {
                 x.hash(&mut hasher);
             }
