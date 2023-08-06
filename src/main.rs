@@ -326,16 +326,16 @@ fn main() -> color_eyre::Result<()> {
                 taboo.pop_back();
             }
 
-           /* let spec = population[best].1.spectrogram.clone();`
+            let spec = population[best].1.spectrogram.clone();
 
             population.retain(|(_animal, info)| {
                 compare_spectrograms(&spec, &info.spectrogram) >= f64::min(info.parent_sims.0, info.parent_sims.1)
-            });*/
+            });
             while population.len() < 32 {
                 let h = rng.gen_range(0..eves.len());
                 population.push(eves[h].clone());
             }
-            //taboo.push_front(spec);
+            taboo.push_front(spec);
 
             // update global error
             let mut gen_error = population[best].1.error_vector.clone();
@@ -605,13 +605,13 @@ fn main() -> color_eyre::Result<()> {
             .unwrap()
             .1;
         let datasets = vec![Dataset::default()
-            .name("log winrate")
+            .name("weight")
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
             .style(Style::default().fg(Color::LightCyan))
             .data(&data)];
-        let chart_winrate = Chart::new(datasets)
-            .block(Block::default().title("WINRATE").borders(Borders::ALL))
+        let chart_weight = Chart::new(datasets)
+            .block(Block::default().title("WEIGHT").borders(Borders::ALL))
             .x_axis(
                 Axis::default()
                     .title(Span::styled("Rank", Style::default().fg(Color::LightRed)))
@@ -621,7 +621,7 @@ fn main() -> color_eyre::Result<()> {
             .y_axis(
                 Axis::default()
                     .title(Span::styled(
-                        "Winrate",
+                        "Weight",
                         Style::default().fg(Color::LightRed),
                     ))
                     .style(Style::default().fg(Color::White))
@@ -787,7 +787,7 @@ fn main() -> color_eyre::Result<()> {
                 .wrap(Wrap { trim: true });
 
             f.render_widget(chart_loss, chunks_graph[0]);
-            f.render_widget(chart_winrate, chunks_graph[1]);
+            f.render_widget(chart_weight, chunks_graph[1]);
             f.render_widget(para1, chunks_bar[0]);
             f.render_widget(para2, chunks_bar[1]);
         })?;

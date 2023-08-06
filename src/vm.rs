@@ -14,11 +14,11 @@ pub const REG_BP: u8 = NUM_REGISTERS - 1;
 pub const AREG_REFERENCE: u8 = 0;
 pub const AREG_LUT: u8 = 1;
 
-pub const NUM_INSTRUCTIONS: usize = 4096;
+pub const NUM_INSTRUCTIONS: usize = 16384;
 pub const COVMAP_SIZE: usize = NUM_INSTRUCTIONS / 8;
 
-pub const LUT_SIZE: usize = 256;
-pub const STACK_SIZE: usize = 256;
+pub const LUT_SIZE: usize = 1024;
+pub const STACK_SIZE: usize = 512;
 
 #[derive(Debug, PartialEq)]
 pub enum VmRunResult {
@@ -116,7 +116,7 @@ impl VmState {
         self.pc += 1;
 
         let Some(opcode) = insn.get_opcode() else {
-            return VmRunResult::Continue; // illegal instruction, not fatal :)
+            return VmRunResult::Stop; // illegal instruction, fatal :)
         };
 
         let mut res = VmRunResult::Continue;
@@ -318,7 +318,10 @@ impl VmState {
 
                 let audio_idx = 3; // always out tbh // (insn.get_operand_imm8(2) % NUM_REGISTERS) as usize;
                 let mut audio = Vec::new();
-                std::mem::swap(&mut audio, &mut self.aregs[audio_idx]); // this will cause problems later
+                // temporarily yoink the buffer we're writing to out of aregs
+                // this will cause problems later
+                // update: yeah it caused problems
+                std::mem::swap(&mut audio, &mut self.aregs[audio_idx]); 
 
                 let kernel_idx = (insn.get_operand_imm8(1) % 3) as usize;
                 let kernel = &self.aregs[kernel_idx];
