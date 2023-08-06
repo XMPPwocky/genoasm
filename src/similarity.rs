@@ -79,7 +79,7 @@ pub fn compare_spectrograms_internal<'a>(
         .zip(b.1.chunks(n_bands))
         .map(|(a, b)| {
             let raw_loudness_diff = (a.iter().map(|c| c.norm_sqr() as f64).sum::<f64>()
-                - b.iter().map(|c| c.norm_sqr() as f64).sum::<f64>());
+                - b.iter().map(|c| c.norm_sqr() as f64).sum::<f64>()).abs();
             let d = a.iter().zip(b.iter()).map(|(&l, &r)| {
                 //let (l, r) = (l as f64, r as f64);
 
