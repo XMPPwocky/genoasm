@@ -149,6 +149,24 @@ impl VmState {
                         .wrapping_sub(128)
                         .wrapping_add(insn.get_operand_imm8(2) as u16);
                 }
+            },
+            JmpBack => {
+                let reg = REG_ACCUMULATOR;
+
+                let va = self.get_reg(reg);
+                self.set_reg(reg, va.wrapping_add(1));
+
+                let limit = insn.get_operand_imm16(0);
+
+                let taken = va < limit;
+                
+                if taken {
+                    // offset
+                    self.pc = self
+                        .pc
+                        .wrapping_sub(2)
+                        .wrapping_sub(insn.get_operand_imm8(2) as u16);
+                }
             }
             Const16 => {
                 self.set_reg(insn.get_operand_imm8(0), insn.get_operand_imm16(1));
@@ -363,6 +381,7 @@ pub enum Opcode {
 
     Jmp,
     JmpIf,
+    JmpBack,
 
     Const16, // REG_A = IMM16_B
     Mov,     // REG_A = REG_B
