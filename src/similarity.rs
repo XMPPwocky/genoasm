@@ -19,9 +19,7 @@ fn bin_to_band(bin: usize, num_bins: usize) -> usize {
     (pos * NUM_BANDS as f32).floor() as usize
 }
 pub fn a_weight(hz: f32) -> f32 {
-    if hz < 42.0 {
-        return 0.0;
-    }
+    let hz = f32::max(10.0, hz);
     (12194.0f32.powi(2) * hz.powi(4))
         / ((hz.powi(2) + 20.6f32.powi(2))
             * f32::sqrt((hz.powi(2) + 107.7f32.powi(2)) * (hz.powi(2) + 737.9f32.powi(2)))
