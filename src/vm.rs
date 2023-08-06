@@ -17,7 +17,7 @@ pub const AREG_LUT: u8 = 1;
 pub const NUM_INSTRUCTIONS: usize = 16384;
 pub const COVMAP_SIZE: usize = NUM_INSTRUCTIONS / 8;
 
-pub const LUT_SIZE: usize = 1024;
+pub const LUT_SIZE: usize = 8;
 pub const STACK_SIZE: usize = 512;
 
 #[derive(Debug, PartialEq)]
