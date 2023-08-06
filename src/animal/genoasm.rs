@@ -210,7 +210,7 @@ impl Animal for Genoasm {
 
             for i in 0..insn_splice_len {
                 instructions[insn_split_point + i] =
-                    instructions[(insn_split_point + spin + i) % NUM_INSTRUCTIONS];
+                    friend.instructions[(insn_split_point + spin + i) % NUM_INSTRUCTIONS];
             }
         }
         Genoasm { instructions, lut }
