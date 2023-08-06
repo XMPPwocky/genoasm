@@ -230,7 +230,7 @@ fn main() -> color_eyre::Result<()> {
     let mut best_cost = std::f64::INFINITY;
     let mut last_best_time = Instant::now();
 
-    const NUM_ALL_STARS: usize = 2048;
+    const NUM_ALL_STARS: usize = 512;
     let mut all_stars = VecDeque::with_capacity(NUM_ALL_STARS);
     all_stars.extend(eves.iter().cloned());
 
