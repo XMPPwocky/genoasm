@@ -78,14 +78,15 @@ pub fn compare_spectrograms_internal<'a>(
     a.1.chunks(n_bands)
         .zip(b.1.chunks(n_bands))
         .map(|(a, b)| {
-            a.iter().zip(b.iter()).map(|(&l, &r)| {
+            let d = a.iter().zip(b.iter()).map(|(&l, &r)| {
                 //let (l, r) = (l as f64, r as f64);
 
-                let diff = 1.0 / ((l * r).norm() as f64);
+                (l * r).norm() as f64
 
                 //let diff = (l.ln() - r.ln()).abs();
-                if diff.is_finite() { diff } else { 1e50 }
-            }).sum::<f64>()
+                
+            }).sum::<f64>().powi(-1);
+            if d.is_finite() { d } else { 1e50 }
         })
 }
 
