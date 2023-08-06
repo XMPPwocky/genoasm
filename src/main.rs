@@ -551,7 +551,7 @@ fn main() -> color_eyre::Result<()> {
             population.retain(|elem| {
                 let agh = ugh;
                 ugh += 1;
-                seens.get(&elem.1.covhash) == Some(&agh)
+                *seens.get(&elem.1.covhash).unwrap() == agh
             });
         }
 
