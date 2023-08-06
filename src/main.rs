@@ -510,8 +510,8 @@ fn main() -> color_eyre::Result<()> {
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
         let mut seens: HashMap<u64, usize> = HashMap::new();
-        let pop_full = population.len() == args.population_size;
-        if pop_full {
+        //let pop_full = population.len() == args.population_size;
+        {
                 for (i, elem) in population.iter().enumerate() {
                 {
                     use std::collections::hash_map::Entry;
@@ -544,13 +544,11 @@ fn main() -> color_eyre::Result<()> {
         a_history.push((current_generation as f64, avg.ln()));
 
         let mut ugh = 0;
-        if pop_full {
-            population.retain(|elem| {
-                let agh = ugh;
-                ugh += 1;
-                *seens.get(&elem.1.covhash).unwrap() == agh
-            });
-        }
+        population.retain(|elem| {
+            let agh = ugh;
+            ugh += 1;
+            *seens.get(&elem.1.covhash).unwrap() == agh
+        });
 
         if population.len() > args.population_size {
             population.drain(args.population_size..);
