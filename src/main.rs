@@ -240,7 +240,7 @@ fn main() -> color_eyre::Result<()> {
     global_error.normalize();
 
     for current_generation in 0..args.generations {
-        if rng.gen_bool(0.00005) {
+        /*if rng.gen_bool(0.00005) {
             // Meteor strike!
             taboo.clear();
             taboo.extend(
@@ -250,7 +250,7 @@ fn main() -> color_eyre::Result<()> {
                     .take(TABOO_LEN),
             );
             population = eves.clone();
-        }
+        }*/
         let mut ugh = 0;
         let l = taboo.len();
 
