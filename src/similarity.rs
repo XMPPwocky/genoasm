@@ -83,11 +83,11 @@ pub fn compare_spectrograms_internal<'a>(
             a.iter().zip(b.iter()).map(|(&l, &r)| {
                 let (l, r) = (l as f64, r as f64);
 
-                //(l - r).abs()
+                (l - r).abs()
 
-                let diff = (l.ln() - r.ln()).abs();
-                if diff.is_finite() { diff } else { 1e5 }
-            }).sum::<f64>()
+                //let diff = (l.ln() - r.ln()).abs();
+                //if diff.is_finite() { diff } else { 1e5 }
+            }).sum::<f64>().powi(2)
         })
 }
 
