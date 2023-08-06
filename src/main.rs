@@ -471,7 +471,7 @@ fn main() -> color_eyre::Result<()> {
                             trials: AtomicUsize::new(fake_trials),
                             covhash
                         };
-                        if f64::min(sim1, sim2) > args.parent_child_diff { //&& f < cutoff {
+                        if f64::min(sim1, sim2) > args.parent_child_diff && cost < cutoff {
                             // regardless of taboo, credit parent(s)
                             // medidate on min/max switch here
                             if e_sum < f64::min(par_info.error_vector_sum, par2_info.error_vector_sum) {
