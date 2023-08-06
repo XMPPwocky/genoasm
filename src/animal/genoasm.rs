@@ -197,12 +197,12 @@ impl Animal for Genoasm {
 
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
-        {
+        for _ in 0..4 {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
             let insn_splice_len =
-                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(0..4);
+                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(1..5);
 
-            let spin = if rng.gen_bool(0.95) {
+            let spin = if rng.gen_bool(0.98) {
                 0
             } else {
                 rng.gen_range(0..NUM_INSTRUCTIONS)
@@ -223,7 +223,7 @@ impl Animal for Genoasm {
         // mutate instructions
         let windex = WeightedIndex::new(vec![2.0, 1.0, 0.5, 0.01, 0.01, 1.0]).unwrap();
 
-        for _ in 0..(1 << rng.gen_range(6..11)) {
+        for _ in 0..(1 << rng.gen_range(4..10)) {
             match rng.sample(&windex) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
