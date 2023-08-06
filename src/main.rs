@@ -326,16 +326,16 @@ fn main() -> color_eyre::Result<()> {
                 taboo.pop_back();
             }
 
-            let spec = population[best].1.spectrogram.clone();
+            /*let spec = population[best].1.spectrogram.clone();
 
             population.retain(|(_animal, info)| {
                 compare_spectrograms(&spec, &info.spectrogram) >= f64::max(info.parent_sims.0, info.parent_sims.1)
-            });
+            });*/
             while population.len() < 32 {
                 let h = rng.gen_range(0..eves.len());
                 population.push(eves[h].clone());
             }
-            taboo.push_front(spec);
+            //taboo.push_front(spec);
 
             // update global error
             let mut gen_error = population[best].1.error_vector.clone();
