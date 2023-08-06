@@ -386,7 +386,7 @@ fn main() -> color_eyre::Result<()> {
             let windex = &windex;
 
             rayon::scope(move |s| {
-                for _ in 0..256 {
+                for _ in 0..96 {
                     let m_tx = tx.clone();
 
                     s.spawn(move |_| {
