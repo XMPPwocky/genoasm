@@ -501,15 +501,15 @@ fn main() -> color_eyre::Result<()> {
         }
 
         for (animal, info) in rx.iter() {
-            let pos = population.partition_point(|x| x.1.cost < info.cost);
-            if pos == population.len() {
-                continue; // obsoleted by a previous find this generation
-            }
-            population.insert(pos, (animal, info));
+            //let pos = population.partition_point(|x| x.1.cost < info.cost);
+            //if pos == population.len() {
+            // we'll just do a full sort later...
+            population.push((animal, info));
+            //} else {
+            //    population.insert(pos, (animal, info));
+            //}
         }
 
-        // again there's no excuse not to do insertion sort here
-        // partition_point just always screws me up w/ off-by-ones
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
 
         let mut seens: HashMap<u64, usize> = HashMap::new();
@@ -522,7 +522,7 @@ fn main() -> color_eyre::Result<()> {
                         Entry::Occupied(e) => {
                             // we are slain!
                             // award our better with our stats...
-                            /*let slayer_idx = *e.get();
+                            let slayer_idx = *e.get();
                             population[slayer_idx].1.trials.fetch_add(
                                 elem.1.trials.load(Ordering::SeqCst),
                                 Ordering::SeqCst
@@ -530,7 +530,7 @@ fn main() -> color_eyre::Result<()> {
                             population[slayer_idx].1.wins.fetch_add(
                                 elem.1.wins.load(Ordering::SeqCst),
                                 Ordering::SeqCst
-                            );*/
+                            );
                         },
                         Entry::Vacant(v) => {
                             v.insert(i);
