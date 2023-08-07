@@ -103,7 +103,7 @@ struct Stats {
     taboo_rejects_count: AtomicUsize,
 }
 
-fn screen(gen: &genoasm::Genoasm) -> bool {
+fn screen(_gen: &genoasm::Genoasm) -> bool {
     /*const SCREEN_LEN: usize = 4096;
     let gas_limit = SCREEN_LEN as u64 * 96;
 
@@ -547,7 +547,7 @@ fn main() -> color_eyre::Result<()> {
         population.retain(|elem| {
             let agh = ugh;
             ugh += 1;
-            *seens.get(&elem.1.covhash).unwrap() == agh
+            (*seens.get(&elem.1.covhash).unwrap() == agh) || rng.gen_bool(0.9)
         });
 
         if population.len() > args.population_size {
