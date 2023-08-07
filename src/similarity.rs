@@ -85,7 +85,7 @@ pub fn compare_spectrograms_internal<'a>(
 
                 //let diff = (l.ln() - r.ln()).abs();
                 
-            }).sum::<f64>()
+            }).sum::<f64>().powi(2)
             //if d.is_finite() { d } else { 1e50 }
         })
 }
