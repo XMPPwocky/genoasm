@@ -1,5 +1,5 @@
 use realfft::{num_complex::Complex, RealToComplex};
-pub type Spectrogram = (usize, Vec<Complex<f32>>);
+pub type Spectrogram = (usize, Vec<f32>);
 
 //const BAND_LOG: f32 = 1.618;
 
@@ -41,9 +41,9 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
         band_area[bin_to_band(i, r2c.complex_len())] += 1.0;
     }*/
 
-    for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 3) {
+    for inp_chunk in inp.windows(r2c.len()).step_by(r2c.len() / 2) {
         let spec_start = spectrums.len();
-        spectrums.extend(std::iter::repeat(Complex::new(0., 0.)).take(spectrum.len()));
+        spectrums.extend(std::iter::repeat(0.0).take(NUM_BANDS));
         let spectrum_binned = &mut spectrums[spec_start..];
 
         for (i, (x, z)) in indata.iter_mut().zip(inp_chunk.iter()).enumerate() {
@@ -56,10 +56,10 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
 
         r2c.process(&mut indata, &mut spectrum).unwrap();
 
-        //let power_spec = spectrum.iter().map(|complex| complex.norm_sqr());
+        let power_spec = spectrum.iter().map(|complex| complex.norm_sqr());
 
-        for (bin, val) in spectrum.iter().enumerate() {
-            let band = bin; //bin_to_band(bin, r2c.complex_len());
+        for (bin, val) in power_spec.enumerate() {
+            let band = bin_to_band(bin, r2c.complex_len());
             let hz = bin as f32 * SAMPLE_RATE / r2c.len() as f32;
             spectrum_binned[band] += val * a_weight(hz); // / band_area[band];
         }
@@ -79,9 +79,9 @@ pub fn compare_spectrograms_internal<'a>(
         .zip(b.1.chunks(n_bands))
         .map(|(a, b)| {
             a.iter().zip(b.iter()).map(|(&l, &r)| {
-                //let (l, r) = (l as f64, r as f64);
+                let (l, r) = (l as f64, r as f64);
 
-                ((l - r).norm_sqr() as f64) // / f64::max(1e-30, r.norm_sqr() as f64)
+                (l - r)// / f64::max(1e-30, r.norm_sqr() as f64)
 
                 //let diff = (l.ln() - r.ln()).abs();
                 
