@@ -221,7 +221,7 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        let windex = WeightedIndex::new(vec![2.0, 1.0, 0.5, 0.005, 0.005, 1.0]).unwrap();
+        let windex = WeightedIndex::new(vec![2.0, 1.0, 0.5, 0.15, 0.15, 1.0]).unwrap();
 
         for _ in 0..(1 << rng.gen_range(2..8)) {
             match rng.sample(&windex) {
