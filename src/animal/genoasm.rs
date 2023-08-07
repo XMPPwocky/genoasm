@@ -200,7 +200,7 @@ impl Animal for Genoasm {
         for _ in 0..4 {
             let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
             let insn_splice_len =
-                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(1..5);
+                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(4..8);
 
             let spin = if rng.gen_bool(0.98) {
                 0
