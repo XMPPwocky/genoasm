@@ -474,7 +474,7 @@ fn main() -> color_eyre::Result<()> {
                         if f64::min(sim1, sim2) > args.parent_child_diff && cost < cutoff {
                             // regardless of taboo, credit parent(s)
                             // medidate on min/max switch here
-                            if e_sum < f64::min(par_info.error_vector_sum, par2_info.error_vector_sum) {
+                            if e_sum < best_cost { //f64::min(par_info.error_vector_sum, par2_info.error_vector_sum) {
                                 par_info.wins.fetch_add(1, Ordering::SeqCst);
                                par2_info.wins.fetch_add(1, Ordering::SeqCst);
                             }
