@@ -81,7 +81,7 @@ pub fn compare_spectrograms_internal<'a>(
             a.iter().zip(b.iter()).map(|(&l, &r)| {
                 let (l, r) = (l as f64, r as f64);
 
-                (l - r)// / f64::max(1e-30, r.norm_sqr() as f64)
+                (l - r).abs() // / f64::max(1e-30, r.norm_sqr() as f64)
 
                 //let diff = (l.ln() - r.ln()).abs();
                 
