@@ -18,14 +18,21 @@ fn bin_to_band(bin: usize, num_bins: usize) -> usize {
 
     (pos * NUM_BANDS as f32).floor() as usize
 }
+// as a raw gain, not dB
 pub fn a_weight(hz: f32) -> f32 {
     let hz = f32::max(10.0, hz);
-    (12194.0f32.powi(2) * hz.powi(4))
-        / ((hz.powi(2) + 20.6f32.powi(2))
-            * f32::sqrt((hz.powi(2) + 107.7f32.powi(2)) * (hz.powi(2) + 737.9f32.powi(2)))
-            * (hz.powi(2) + 12194.0f32.powi(2)))
+    
+    let numerator = 12194.0f32.powi(2) * hz.powi(4);
+    
+    let denominator =
+        (hz.powi(2) + 20.6f32.powi(2))
+        * (hz.powi(2) + 12194.0f32.powi(2))
+        * f32::sqrt((hz.powi(2) + 107.7f32.powi(2)))
+        * f32::sqrt((hz.powi(2) + 737.9f32.powi(2)));
+        
+    numerator / denominator
 
-    // (20.0 * ra.log10() + 2.0)
+    //(20.0 * (ra/0.794).log10())
 }
 pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectrogram {
     let mut spectrums = vec![];
@@ -56,7 +63,7 @@ pub fn compute_spectrogram(inp: &[i16], r2c: &dyn RealToComplex<f32>) -> Spectro
 
         r2c.process(&mut indata, &mut spectrum).unwrap();
 
-        let power_spec = spectrum.iter().map(|complex| complex.norm_sqr());
+        let power_spec = spectrum.iter().map(|complex| complex.norm());
 
         for (bin, val) in power_spec.enumerate() {
             let band = bin_to_band(bin, r2c.complex_len());

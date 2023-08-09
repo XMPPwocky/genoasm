@@ -189,7 +189,7 @@ fn main() -> color_eyre::Result<()> {
     let noisy_seed_err = spectrogram_error_vector(&seed_spec, &noisy_seed_spec);
     let f = noisy_seed_err.sum();
 
-    let gas_limit = 64 * seed.len() as u64;
+    let gas_limit = 128 * seed.len() as u64;
     let noisy_seed_info = AnimalInfo {
         cost: f,
         audio: noisy_seed.clone(),
@@ -359,7 +359,7 @@ fn main() -> color_eyre::Result<()> {
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
                 let wr_mod = animal.1.win_rate();
-                let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.25);
+                let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.5);
                 let pos_mod = 1.0 / f64::min(
                     (args.explore * 0.25).exp()
                     , (args.explore * (idx as f64)/(population.len() as f64)).exp());
