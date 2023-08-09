@@ -360,7 +360,7 @@ fn main() -> color_eyre::Result<()> {
             .map(|(idx, animal)| {
                 let wr_mod = animal.1.win_rate();
                 let gas_mod = (animal.1.gas as f64 + 1.0).powf(-0.25);
-                let pos_mod = 1.0 / f64::max(
+                let pos_mod = 1.0 / f64::min(
                     (args.explore * 0.25).exp()
                     , (args.explore * (idx as f64)/(population.len() as f64)).exp());
                 //let cost_mod = (animal.1.cost + 1.0).powf(-1.0);
