@@ -198,22 +198,15 @@ impl Animal for Genoasm {
 
         lut[lut_split_point..lut_end].copy_from_slice(&friend.lut[lut_split_point..lut_end]);
 
-        for _ in 0..4 {
-            let insn_split_point = rng.gen_range(0..NUM_INSTRUCTIONS);
-            let insn_splice_len =
-                rng.gen_range(0..NUM_INSTRUCTIONS - insn_split_point) >> rng.gen_range(4..8);
-
-            let spin = if rng.gen_bool(0.98) {
-                0
-            } else {
-                rng.gen_range(0..NUM_INSTRUCTIONS)
-            };
-
-            for i in 0..insn_splice_len {
-                instructions[insn_split_point + i] =
-                    friend.instructions[(insn_split_point + spin + i) % NUM_INSTRUCTIONS];
+        let flip_prob = rng.gen_range(0.01..0.3);
+        let mut flip = false;
+        for (out, friend_insn) in instructions.iter_mut().zip(friend.instructions.iter()) {
+            flip ^= rng.gen_bool(flip_prob);
+            if flip {
+                *out = *friend_insn;
             }
         }
+
         Genoasm { instructions, lut }
     }
 
