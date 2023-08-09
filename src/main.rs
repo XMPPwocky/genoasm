@@ -240,7 +240,7 @@ fn main() -> color_eyre::Result<()> {
     global_error.normalize();
 
     for current_generation in 0..args.generations {
-        if rng.gen_bool(0.0005) {
+        if Instant::now().duration_since(last_best_time).as_secs_f32() > 90.0 && rng.gen_bool(0.0005) {
             // Meteor strike!
             taboo.clear();
             taboo.extend(
@@ -559,7 +559,7 @@ fn main() -> color_eyre::Result<()> {
                 .style(Style::default().fg(Color::Cyan))
                 .data(&f_history),
         ];
-        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(8192)];
+        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(4096)];
         let chart_loss = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(
