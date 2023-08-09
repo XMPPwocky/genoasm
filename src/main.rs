@@ -230,7 +230,7 @@ fn main() -> color_eyre::Result<()> {
     let mut best_cost = std::f64::INFINITY;
     let mut last_best_time = Instant::now();
 
-    const NUM_ALL_STARS: usize = 512;
+    const NUM_ALL_STARS: usize = 1024;
     let mut all_stars = VecDeque::with_capacity(NUM_ALL_STARS);
     all_stars.extend(eves.iter().cloned());
 
@@ -559,7 +559,7 @@ fn main() -> color_eyre::Result<()> {
                 .style(Style::default().fg(Color::Cyan))
                 .data(&f_history),
         ];
-        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(2048)];
+        let (annoying_gen, annoying_max) = f_history[f_history.len().saturating_sub(8192)];
         let chart_loss = Chart::new(datasets)
             .block(Block::default().title("LOSS").borders(Borders::ALL))
             .x_axis(
