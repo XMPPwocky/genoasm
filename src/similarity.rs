@@ -1,9 +1,9 @@
-use realfft::{num_complex::Complex, RealToComplex};
+use realfft::RealToComplex;
 pub type Spectrogram = (usize, Vec<f32>);
 
 //const BAND_LOG: f32 = 1.618;
 
-const NUM_BANDS: usize = 64;
+const NUM_BANDS: usize = 32;
 use crate::SAMPLE_RATE;
 
 fn hz_to_mel(hz: f32) -> f32 {
@@ -81,11 +81,11 @@ pub fn compare_spectrograms_internal<'a>(
             a.iter().zip(b.iter()).map(|(&l, &r)| {
                 let (l, r) = (l as f64, r as f64);
 
-                (l - r).abs() // / f64::max(1e-30, r.norm_sqr() as f64)
+                (l - r).powi(2) // / f64::max(1e-30, r.norm_sqr() as f64)
 
                 //let diff = (l.ln() - r.ln()).abs();
                 
-            }).sum::<f64>().powi(2)
+            }).sum::<f64>()
             //if d.is_finite() { d } else { 1e50 }
         })
 }

@@ -39,6 +39,8 @@ impl Genoasm {
         while status == VmRunResult::Continue {
             status = vm.run_insn(&self.instructions[vm.pc as usize % NUM_INSTRUCTIONS]);
         }
+
+        // compute hash of opcodes for all covered instructions
         let mut hasher = DefaultHasher::new();
 
         for x in self.instructions.iter()
@@ -49,7 +51,6 @@ impl Genoasm {
             }) {
                 x.hash(&mut hasher);
             }
-            
 
         let f = normalize_audio(&vm.aregs[3]); // useless clone lol
         (
@@ -221,9 +222,9 @@ impl Animal for Genoasm {
         let mut rng = rand::thread_rng();
 
         // mutate instructions
-        let windex = WeightedIndex::new(vec![2.0, 1.0, 0.5, 0.15, 0.15, 1.0]).unwrap();
+        let windex = WeightedIndex::new(vec![4.0, 1.0, 0.5, 0.15, 0.15, 1.0]).unwrap();
 
-        for _ in 0..(1 << rng.gen_range(2..8)) {
+        for _ in 0..(1 << rng.gen_range(6..11)) {
             match rng.sample(&windex) {
                 0 => {
                     let idx = rng.gen_range(0..NUM_INSTRUCTIONS);
@@ -278,7 +279,7 @@ impl Animal for Genoasm {
         }
 
         // mutate LUT
-        for _ in 0..32 {
+        for _ in 0..2 {
             match rng.gen_range(0..=3) {
                 0 => {
                     let idx = rng.gen_range(0..LUT_SIZE);

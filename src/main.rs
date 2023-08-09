@@ -240,7 +240,7 @@ fn main() -> color_eyre::Result<()> {
     global_error.normalize();
 
     for current_generation in 0..args.generations {
-        /*if rng.gen_bool(0.00005) {
+        if rng.gen_bool(0.0005) {
             // Meteor strike!
             taboo.clear();
             taboo.extend(
@@ -250,7 +250,7 @@ fn main() -> color_eyre::Result<()> {
                     .take(TABOO_LEN),
             );
             population = eves.clone();
-        }*/
+        }
         let mut ugh = 0;
         let l = taboo.len();
 
@@ -330,12 +330,12 @@ fn main() -> color_eyre::Result<()> {
 
             population.retain(|(_animal, info)| {
                 compare_spectrograms(&spec, &info.spectrogram) >= f64::max(info.parent_sims.0, info.parent_sims.1)
-            });*/
+            });
             while population.len() < 32 {
                 let h = rng.gen_range(0..eves.len());
                 population.push(eves[h].clone());
             }
-            //taboo.push_front(spec);
+            taboo.push_front(spec);*/
 
             // update global error
             let mut gen_error = population[best].1.error_vector.clone();
@@ -352,9 +352,9 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-        let cutoff = population[population.len() - 1].1.cost;
-
         population.par_sort_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+
+        let cutoff = population[population.len() / 2].1.cost;
 
         let weights = population.iter().enumerate()
             .map(|(idx, animal)| {
@@ -381,31 +381,20 @@ fn main() -> color_eyre::Result<()> {
             let taboo = &taboo;
             let stats = &stats;
             let noisy_seed = &noisy_seed;
-            let global_error = &global_error;
+            let _global_error = &global_error;
             let windex = &windex;
 
             rayon::scope(move |s| {
-                for _ in 0..96 {
+                for _ in 0..128 {
                     let m_tx = tx.clone();
 
                     s.spawn(move |_| {
                         let mut rng = rand::thread_rng();
                         let (gen, par_info, par2_info) = {
-                            let v = if taboo.is_empty() && rng.gen_bool(
-                                0.05
-                            ) {
-                                // use an all-star
-                                all_stars
-                                    .iter()
-                                    .choose(&mut rng)
-                                    .expect("no all-stars? hey now")
-                            } else {
-                                &population[windex.sample(&mut rng)]
-                            };
-                            let (eve, eve_info) = v;
+                            let (eve, eve_info) = &population[windex.sample(&mut rng)];
 
                             let v = if taboo.is_empty() && rng.gen_bool(
-                                0.05
+                                0.2
                             ) {
                                 // use an all-star
                                 all_stars
@@ -418,7 +407,7 @@ fn main() -> color_eyre::Result<()> {
 
                             let (adam, adam_info) = v;
 
-                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.1) {
+                            let (eve_info, adam_info, eve) = if rng.gen_bool(0.2) {
                                 (
                                     eve_info,
                                     adam_info,
@@ -434,7 +423,7 @@ fn main() -> color_eyre::Result<()> {
                         stats.trials_count.fetch_add(1, SeqCst);
 
                         par_info.trials.fetch_add(1, Ordering::SeqCst);
-                        par2_info.trials.fetch_add(1, Ordering::SeqCst);
+                        //par2_info.trials.fetch_add(1, Ordering::SeqCst);
 
                         if !screen(&gen) {
                             return;
@@ -473,9 +462,9 @@ fn main() -> color_eyre::Result<()> {
                         if f64::min(sim1, sim2) > args.parent_child_diff && cost < cutoff {
                             // regardless of taboo, credit parent(s)
                             // medidate on min/max switch here
-                            if e_sum < best_cost { //f64::min(par_info.error_vector_sum, par2_info.error_vector_sum) {
+                            if e_sum < (best_cost + f64::min(par_info.error_vector_sum, par2_info.error_vector_sum))/2.0 {
                                 par_info.wins.fetch_add(1, Ordering::SeqCst);
-                               par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                                //par2_info.wins.fetch_add(1, Ordering::SeqCst);
                             }
 
                             let taboo_sim = taboo
@@ -497,16 +486,23 @@ fn main() -> color_eyre::Result<()> {
         }
 
         for (animal, info) in rx.iter() {
-            //let pos = population.partition_point(|x| x.1.cost < info.cost);
-            //if pos == population.len() {
             // we'll just do a full sort later...
             population.push((animal, info));
-            //} else {
-            //    population.insert(pos, (animal, info));
-            //}
         }
 
+        // the full sort
         population.par_sort_unstable_by(|a, b| a.1.cost.partial_cmp(&b.1.cost).unwrap());
+
+        // update some stats
+        f_history.push((current_generation as f64, best_cost));
+
+        // secretly upper 25th %ile now :U
+        let avg = population[population.len() / 4].1.error_vector_sum;
+        a_history.push((current_generation as f64, avg.ln()));
+
+
+        // deduplicate based on covhash
+        // prepare a mapping of covhash -> first index for it
 
         let mut seens: HashMap<u64, usize> = HashMap::new();
         //let pop_full = population.len() == args.population_size;
@@ -518,7 +514,7 @@ fn main() -> color_eyre::Result<()> {
                         Entry::Occupied(e) => {
                             // we are slain!
                             // award our better with our stats...
-                            let slayer_idx = *e.get();
+                            /*let slayer_idx = *e.get();
                             population[slayer_idx].1.trials.fetch_add(
                                 elem.1.trials.load(Ordering::SeqCst),
                                 Ordering::SeqCst
@@ -526,7 +522,7 @@ fn main() -> color_eyre::Result<()> {
                             population[slayer_idx].1.wins.fetch_add(
                                 elem.1.wins.load(Ordering::SeqCst),
                                 Ordering::SeqCst
-                            );
+                            );*/
                         },
                         Entry::Vacant(v) => {
                             v.insert(i);
@@ -536,19 +532,15 @@ fn main() -> color_eyre::Result<()> {
             }
         }
 
-        f_history.push((current_generation as f64, best_cost));
-
-        // secretly upper 25th %ile now :U
-        let avg = population[population.len() / 4].1.error_vector_sum;
-        a_history.push((current_generation as f64, avg.ln()));
-
+        // now we go in and keep only the things which are the first w/ their covhash
         let mut ugh = 0;
         population.retain(|elem| {
             let agh = ugh;
             ugh += 1;
-            (*seens.get(&elem.1.covhash).unwrap() == agh) || rng.gen_bool(0.9)
+            (*seens.get(&elem.1.covhash).unwrap() == agh)
         });
 
+        // cap population size
         if population.len() > args.population_size {
             population.drain(args.population_size..);
         }
