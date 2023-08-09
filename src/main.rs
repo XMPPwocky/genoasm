@@ -425,7 +425,7 @@ fn main() -> color_eyre::Result<()> {
                         stats.trials_count.fetch_add(1, SeqCst);
 
                         par_info.trials.fetch_add(1, Ordering::SeqCst);
-                        //par2_info.trials.fetch_add(1, Ordering::SeqCst);
+                        par2_info.trials.fetch_add(1, Ordering::SeqCst);
 
                         if !screen(&gen) {
                             return;
@@ -466,7 +466,7 @@ fn main() -> color_eyre::Result<()> {
                             // medidate on min/max switch here
                             if e_sum < (best_cost + f64::min(par_info.error_vector_sum, par2_info.error_vector_sum))/2.0 {
                                 par_info.wins.fetch_add(1, Ordering::SeqCst);
-                                //par2_info.wins.fetch_add(1, Ordering::SeqCst);
+                                par2_info.wins.fetch_add(1, Ordering::SeqCst);
                             }
 
                             let taboo_sim = taboo
